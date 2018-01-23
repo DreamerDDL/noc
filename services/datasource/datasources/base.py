@@ -27,7 +27,7 @@ class BaseDataSource(object):
         return s.replace("\n", "\\n").replace("\t", "\\t").replace("\\", "\\\\")
 
     def clean(self, row):
-        s = "\t".join(str(x) for x in row)
+        s = "\t".join(unicode(x) for x in row)
         if "\n" in s or "\\" in s or row.count("\t") >= len(row):
             metrics["error", ("type", "rogue_chars")] += 1
             self.logger.error("Rogue chars in row %s", row)
@@ -41,7 +41,7 @@ class BaseDataSource(object):
             # Try to get cached data
             data = DataSourceCache.get_data(self.name)
             if not data:
-                data = ["\t".join(str(x) for x in self.clean(row))
+                data = ["\t".join(unicode(x) for x in self.clean(row))
                         for row in self.extract()]
                 data += [""]
                 data = "\n".join(data)

@@ -114,7 +114,7 @@ class DataSourceCache(Document):
         :param data:
         :return:
         """
-        return bz2.compress(data, 9)
+        return bz2.compress(data.encode('utf8'), 9)
 
     @classmethod
     def decode(cls, data):
