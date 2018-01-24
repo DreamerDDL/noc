@@ -37,6 +37,13 @@ class Script(noc.sa.script.Script):
                         n[rem_index]["remote_port_subtype"] = v
                     if seq == "7": #lldpRemPortId
                         n[rem_index]["remote_port"] = re.split("[:/]",v)[-1]
+                        if n[rem_index]["remote_port_subtype"] == 3:
+                            n[rem_index]["remote_port"] = \
+                                MACAddressParameter().clean(v)
+                        if n[rem_index]["remote_port_subtype"] == 4:
+                            n[rem_index]["remote_port"] = \
+                                IPv4Parameter().clean(v)
+                        
                     if seq == "9": #lldpRemSysName
                         n[rem_index]["remote_system_name"] = v
 
