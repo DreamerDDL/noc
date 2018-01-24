@@ -99,7 +99,7 @@ class SSHIOStream(IOStream):
     def close(self, exc_info=False):
         if not self.closed():
             if self.channel:
-                self.channel.setblocking(1)
+                self.channel.setblocking(0)
                 self.logger.debug("Closing channel")
                 try:
                     self.channel.close()
