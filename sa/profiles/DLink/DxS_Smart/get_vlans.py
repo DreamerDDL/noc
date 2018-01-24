@@ -22,9 +22,7 @@ class Script(BaseScript):
         r = []
         if self.has_snmp():
             try:
-                pmib = self.profile.get_pmib(self.scripts.get_version())
-                if pmib is None:
-                    raise NotImplementedError()
+                pmib = self.snmp.get("1.3.6.1.2.1.1.2.0") #SNMPv2-MIB::sysObjectID.0
                 for oid, v in self.snmp.getnext(pmib + ".7.6.1.1",
                                                 bulk=True):  # dot1qVlanFdbId
                     r += [{"vlan_id": oid.split(".")[-1], "name": v}]

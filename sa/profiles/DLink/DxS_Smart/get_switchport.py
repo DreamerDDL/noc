@@ -59,9 +59,7 @@ class Script(BaseScript):
             try:
                 # Make a list of tags for each interface or portchannel
                 port_vlans = {}
-                pmib = self.profile.get_pmib(self.scripts.get_version())
-                if pmib is None:
-                    raise NotImplementedError()
+                pmib = self.snmp.get("1.3.6.1.2.1.1.2.0") #SNMPv2-MIB::sysObjectID.0
                 for v in self.snmp.get_tables(
                     [pmib + ".7.6.1.1", pmib + ".7.6.1.2", pmib + ".7.6.1.4"],
                         bulk=True):
