@@ -55,7 +55,9 @@ class Script(BaseScript):
             ports = self.profile.get_ports(self)
             for p in ports:
                 admin_status.update({p['port']: p['admin_state']})
-
+        
+        lldp = self.get_lldp_ports() 
+        stp = self.get_stp_ports() 
         # Get switchports
         for swp in self.scripts.get_switchport():
             admin = admin_status[swp["interface"]]
@@ -66,6 +68,7 @@ class Script(BaseScript):
                 else "physical",
                 "admin_status": admin,
                 "oper_status": swp["status"],
+                "enabled_protocols": [],
                 # "mac": mac,
                 "subinterfaces": [{
                     "name": name,
@@ -88,6 +91,10 @@ class Script(BaseScript):
                 iface["aggregated_interface"] = portchannel_members[name][0]
                 if portchannel_members[name][1]:
                     n["enabled_protocols"] = ["LACP"]
+            if name in lldp:
+              iface["enabled_protocols"] += ["LLDP"]
+            if name in stp:
+              iface["enabled_protocols"] += ["STP"]
             interfaces += [iface]
 
         ipif = self.cli("show ipif")
@@ -129,3 +136,35 @@ class Script(BaseScript):
             interfaces += [i]
 
         return [{"interfaces": interfaces}]
+
+    def get_lldp_ports(self):
+        lldp = []
+        if self.has_snmp():
+            try:
+                pmib = self.snmp.get("1.3.6.1.2.1.1.2.0") #SNMPv2-MIB::sysObjectID.0
+                lldp_enabled = self.snmp.get(pmib + ".24.1.0")
+                if lldp_enabled != 1: #dlinklldpState :enabled(1)
+                    return lldp
+                for oid, v in self.snmp.get_tables(
+                    ["1.0.8802.1.1.2.1.1.6.1.2"], bulk=True):
+                    if v != 4: #disabled
+                      lldp += [oid] 
+            except self.snmp.TimeOutError:
+                pass
+        return lldp
+
+    def get_stp_ports(self):
+        stp = []
+        if self.has_snmp():
+            try:
+                pmib = self.snmp.get("1.3.6.1.2.1.1.2.0") #SNMPv2-MIB::sysObjectID.0
+                stp_enabled = self.snmp.get(pmib + ".6.1.1.0")
+                if stp_enabled != 1: #stpModuleStatus :enabled(1)
+                    return stp
+                for oid, v in self.snmp.get_tables(
+                    ["1.3.6.1.2.1.17.2.15.1.4"], bulk=True):
+                    if v == 1: #enabled
+                      stp += [oid] 
+            except self.snmp.TimeOutError:
+                pass
+        return stp

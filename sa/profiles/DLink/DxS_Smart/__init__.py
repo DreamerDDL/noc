@@ -43,49 +43,6 @@ class Profile(BaseProfile):
             [int(z) for z in self.rx_ver.findall(x)],
             [int(z) for z in self.rx_ver.findall(y)])
 
-    def get_pmib(self, v):
-        if v["platform"].startswith("DES-1210-52"):
-            if v["version"].startswith("1") or v["version"].startswith("2"):
-                return "1.3.6.1.4.1.171.10.75.7"
-            else:
-                return "1.3.6.1.4.1.171.10.75.17"
-        if v["platform"].startswith("DES-1210-48"):
-            return "1.3.6.1.4.1.171.10.76.11"
-        if v["platform"].startswith("DES-1210-08P"):
-            if v["version"].startswith("1") or v["version"].startswith("2"):
-                return "1.3.6.1.4.1.171.10.75.13"
-            else:
-                return "1.3.6.1.4.1.171.10.75.14"
-        if v["platform"].startswith("DES-1210-28P"):
-            if v["version"].startswith("2") or v["version"].startswith("3"):
-                return "1.3.6.1.4.1.171.10.75.6"
-            else:
-                return "1.3.6.1.4.1.171.10.75.19.1"
-        if v["platform"].startswith("DES-1210-28"):
-            if v["version"].startswith("1") or v["version"].startswith("2"):
-                return "1.3.6.1.4.1.171.10.75.5"
-            else:
-                return "1.3.6.1.4.1.171.10.75.15"
-        if v["platform"].startswith("DES-1210"):
-            return "1.3.6.1.4.1.171.10.75.7"
-        if v["platform"] == "DGS-1210-10P":
-            return "1.3.6.1.4.1.171.10.76.12"
-        if v["platform"] == "DGS-1210-20":
-            return "1.3.6.1.4.1.171.10.76.14"
-        if v["platform"] == "DGS-1210-28":
-            return "1.3.6.1.4.1.171.10.76.15"
-        if v["platform"] == "DGS-1210-28P":
-            return "1.3.6.1.4.1.171.10.76.16"
-        if v["platform"] == "DGS-1210-16":
-            return "1.3.6.1.4.1.171.10.76.9"
-        if v["platform"] == "DGS-1210-24":
-            return "1.3.6.1.4.1.171.10.76.10"
-        if v["platform"] == "DGS-1210-48":
-            return "1.3.6.1.4.1.171.10.76.11"
-        if v["platform"] == "DGS-1210-52":
-            return "1.3.6.1.4.1.171.10.76.17"
-        return None
-
     rx_port = re.compile(
         r"^(?P<port>\d+)\s+"
         r"(?P<admin_state>Enabled|Disabled)\s+"

@@ -35,9 +35,7 @@ class Script(BaseScript):
                         p += bin[int(c[i], 16)]
                 return p
             try:
-                pmib = self.profile.get_pmib(self.scripts.get_version())
-                if pmib is None:
-                    raise NotImplementedError()
+                pmib = self.snmp.get("1.3.6.1.2.1.1.2.0") #SNMPv2-MIB::sysObjectID.0
                 for v in self.snmp.get_tables([
                         pmib + ".8.1.3.1.1",
                         pmib + ".8.1.3.1.2",
