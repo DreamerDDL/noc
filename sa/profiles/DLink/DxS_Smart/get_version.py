@@ -11,6 +11,7 @@ from noc.core.script.base import BaseScript
 from noc.sa.interfaces.igetversion import IGetVersion
 import re
 from noc.sa.profiles.DLink.DxS_Smart import (DES1210, DGS1210)
+from noc.sa.profiles.DLink.DxS import get_platform
 
 
 class Script(BaseScript):

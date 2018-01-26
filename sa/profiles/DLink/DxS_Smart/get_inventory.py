@@ -11,7 +11,6 @@ import re
 # NOC modules
 from noc.core.script.base import BaseScript
 from noc.sa.interfaces.igetinventory import IGetInventory
-from noc.sa.profiles.DLink.DxS import get_platform
 
 class Script(BaseScript):
     name = "DLink.DxS_Smart.get_inventory"
@@ -26,7 +25,7 @@ class Script(BaseScript):
         p = {
             "type": "CHASSIS",
             "vendor": "DLINK",
-            "part_no": get_platform(platform, revision),
+            "part_no": platform,
             "revision": revision,
             "serial": s["attributes"]["Serial Number"],
             "description": platform

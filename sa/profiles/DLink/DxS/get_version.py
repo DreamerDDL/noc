@@ -11,7 +11,6 @@ import re
 # NOC modules
 from noc.core.script.base import BaseScript
 from noc.sa.interfaces.igetversion import IGetVersion
-from noc.sa.profiles.DLink.DxS import get_platform
 
 
 class Script(BaseScript):
@@ -37,9 +36,7 @@ class Script(BaseScript):
         match = self.re_search(self.rx_ver, s)
         r = {
             "vendor": "DLink",
-            "platform": get_platform(
-                match.group("platform"), match.group("hardware")
-            ),
+            "platform": match.group("platform"),
             "version": match.group("version"),
             "attributes": {
                 "Boot PROM": match.group("bootprom"),

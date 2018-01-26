@@ -12,7 +12,6 @@ import re
 from noc.core.script.base import BaseScript
 from noc.sa.interfaces.igetinventory import IGetInventory
 from noc.sa.interfaces.base import InterfaceTypeError
-from noc.sa.profiles.DLink.DxS import get_platform
 
 
 class Script(BaseScript):
@@ -53,7 +52,7 @@ class Script(BaseScript):
         s = self.scripts.get_switch()
         match = self.rx_dev.search(s)
         revision = match.group("revision")
-        part_no = get_platform(match.group("part_no"), revision)
+        part_no = match.group("part_no")
         p = {
             "type": "CHASSIS",
             "vendor": "DLINK",
