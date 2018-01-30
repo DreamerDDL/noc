@@ -156,8 +156,8 @@ class Profile(BaseProfile):
         r"(?P<addr_learning>Enabled|Disabled)\s*"
         r"((?P<trap_state>Enabled|Disabled)\s*)?"
         r"((?P<asd>\-)\s*)?"
-        r"(\n\s+(?P<mdix>Auto|MDI|MDIX|Cross|Normal|\-)\s*)?"
-        r"(\n\s*Desc(ription)?:\s*?(?P<desc>.*?))?$",
+        r"((?P<mdix>Auto|MDI|MDIX|Cross|Normal|\-|N/A)\s*)"
+        r"(Desc(ription)?:\s*?(?P<desc>.*?))$",
         re.MULTILINE)
 
     def parse_interface(self, s):
@@ -193,17 +193,24 @@ class Profile(BaseProfile):
             return None
 
     def get_ports(self, script, interface=None):
-        if (
-            (
-                script.match_version(DES3200, version__gte="1.70.B007") and
-                script.match_version(DES3200, version__lte="3.00.B000")
-            ) or script.match_version(DES3200, version__gte="4.38.B000") or
-            script.match_version(DES3028, version__gte="2.90.B10") or
-            script.match_version(DGS3120, version__gte="3.00.B022") or
-            script.match_version(DGS3420, version__gte="1.73.R008") or
-            script.match_version(DGS3620, version__gte="2.50.017")
-        ) and not script.match_version(DES3200, platform="DES-3200-28F"):
-            objects = []
+        objects = []
+        if script.match_version(DES3200, platform="DES-3200-28F"):
+            try:
+                if interface is not None:
+                    objects = script.cli(
+                        "show ports %s description" % interface,
+                        obj_parser=self.parse_interface,
+                        cmd_next="n", cmd_stop="q"
+                    )
+                else:
+                    objects = script.cli(
+                        "show ports description",
+                        obj_parser=self.parse_interface,
+                        cmd_next="n", cmd_stop="q"
+                    )
+            except script.CLISyntaxError:
+                objects = []
+        else: 
             if interface is not None:
                 c = script.cli(("show ports %s description" % interface))
             else:
@@ -225,22 +232,6 @@ class Profile(BaseProfile):
                     "trap_state": match.group("trap_state"),
                     "desc": match.group("desc").strip()
                 }]
-        else:
-            try:
-                if interface is not None:
-                    objects = script.cli(
-                        "show ports %s description" % interface,
-                        obj_parser=self.parse_interface,
-                        cmd_next="n", cmd_stop="q"
-                    )
-                else:
-                    objects = script.cli(
-                        "show ports description",
-                        obj_parser=self.parse_interface,
-                        cmd_next="n", cmd_stop="q"
-                    )
-            except script.CLISyntaxError:
-                objects = []
             # DES-3226S does not support `show ports description` command
             if objects == []:
                 objects = script.cli(
