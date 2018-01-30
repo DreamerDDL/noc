@@ -38,8 +38,8 @@ class Command(BaseCommand):
                             help="List active jobs"
                             ),
         parser.add_argument("--format", "-f",
-                            dest="store",
-                            action="format",
+                            dest="format",
+                            action="store",
                             choices=["json", "csv"],
                             help="Set output format"
                             ),
