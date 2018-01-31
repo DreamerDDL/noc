@@ -194,7 +194,10 @@ class Profile(BaseProfile):
 
     def get_ports(self, script, interface=None):
         objects = []
-        if script.match_version(DES3200, platform="DES-3200-28F"):
+        if (
+            script.match_version(DES3200, platform="DES-3200-28F") or 
+            script.match_version(platform="DGS-1210-28/ME")
+        ):
             try:
                 if interface is not None:
                     objects = script.cli(
