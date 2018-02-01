@@ -63,6 +63,8 @@ class Script(BaseScript):
                     iface = self.snmp.get(
                         "1.3.6.1.2.1.31.1.1.1.1." + str(v[1]),
                         cached=True)  # IF-MIB
+                    if iface[:6] == "Slot0/":
+                        iface = iface[6:]
                     if interface is not None:
                         if iface == interface:
                             pass
