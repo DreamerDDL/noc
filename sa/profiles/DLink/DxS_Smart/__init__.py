@@ -12,7 +12,6 @@
 import re
 from noc.core.profile.base import BaseProfile
 
-
 class Profile(BaseProfile):
     name = "DLink.DxS_Smart"
     pattern_more = [
@@ -165,6 +164,14 @@ class Profile(BaseProfile):
                 }]
         return vlans
 
+    def convert_interface_name(self, s):
+        """
+        Slot0/1 -> 1 # DES-1210-28/ME DES-1210-10
+        """
+        if s.startswith("Slot0/"):
+            return s[6:]
+        else:
+            return s
 
 # DES-1210-series
 def DES1210(v):

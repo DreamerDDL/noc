@@ -28,8 +28,7 @@ class Script(BaseScript):
                     if n[:3] == 'Aux' or n[:4] == 'Vlan' \
                     or n[:11] == 'InLoopBack':
                         continue
-                    if n[:6] == "Slot0/":
-                        n = n[6:]
+                    n = self.profile.convert_interface_name(n)
                     if interface:
                         if n == interface:
                             r += [{

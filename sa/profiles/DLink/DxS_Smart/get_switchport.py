@@ -73,8 +73,7 @@ class Script(BaseScript):
                         if s[i] == '1':
                             oid = "1.3.6.1.2.1.31.1.1.1.1." + str(i + 1)
                             iface = self.snmp.get(oid, cached=True)
-                            if iface[:6] == "Slot0/":
-                                iface = iface[6:]
+                            iface = self.profile.convert_interface_name(iface)
                             if iface not in port_vlans:
                                 port_vlans.update({
                                     iface: {
@@ -91,8 +90,7 @@ class Script(BaseScript):
                         if s[i] == '1' and str(i + 1) not in un:
                             oid = "1.3.6.1.2.1.31.1.1.1.1." + str(i + 1)
                             iface = self.snmp.get(oid, cached=True)
-                            if iface[:6] == "Slot0/":
-                                iface = iface[6:]
+                            iface = self.profile.convert_interface_name(iface)
                             if iface not in port_vlans:
                                 port_vlans.update({
                                     iface: {
@@ -110,8 +108,7 @@ class Script(BaseScript):
                     or iface[:11] == 'InLoopBack' \
                     or iface == 'System':
                         continue
-                    if iface[:6] == "Slot0/":
-                        iface = iface[6:]
+                    iface = self.profile.convert_interface_name(iface)
                     port_descr.update({iface: description})
 
                 # Get switchport data and overall result

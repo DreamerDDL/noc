@@ -46,8 +46,7 @@ class Script(BaseScript):
                     or n[:11] == 'InLoopBack':
                         continue
                     else:
-                        if n[:6] == "Slot0/":
-                            n = n[6:]
+                        n = self.profile.convert_interface_name(n)
                         admin_status.update({n: int(s) == 1})
             except self.snmp.TimeOutError:
                 pass
