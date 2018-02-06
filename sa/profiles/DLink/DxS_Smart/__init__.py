@@ -164,12 +164,19 @@ class Profile(BaseProfile):
                 }]
         return vlans
 
+    rx_interface_name = re.compile(
+        r"Slot0/(?P<re_port>\d+)?"
+        r"Port\s+(?P<re_port>\d+)?"
+    )
     def convert_interface_name(self, s):
         """
+        IF-MIB:IfDescr
+        "D-Link DES-3200-10 R4.37.B008 Port 1 " -> "1"
         Slot0/1 -> 1 # DES-1210-28/ME DES-1210-10
         """
-        if s.startswith("Slot0/"):
-            return s[6:]
+        match = self.rx_interface_name.match(s)
+        if match:
+            return match.group("re_port")
         else:
             return s
 
