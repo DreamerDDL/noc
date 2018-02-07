@@ -13,6 +13,7 @@ import re
 from noc.core.script.base import BaseScript
 from noc.sa.interfaces.igetinterfaces import IGetInterfaces
 from noc.core.ip import IPv4
+from noc.core.mib import mib
 
 
 class Script(BaseScript):
@@ -37,29 +38,33 @@ class Script(BaseScript):
         #        for m in pc["members"]:
         #            portchannel_members[m] = (i, t)
         admin_status = {}
+        ifindexes = {}
         if self.has_snmp():
             try:
-                for n, s in self.snmp.join_tables(
-                        "1.3.6.1.2.1.31.1.1.1.1",
-                        "1.3.6.1.2.1.2.2.1.7"):  # IF-MIB
-                    if n[:3] == 'Aux' or n[:4] == 'Vlan' \
+                for (oid, i, n, s) in self.snmp.get_tables(
+                       [mib["IF-MIB::ifIndex"],
+                        mib["IF-MIB::ifName"],
+                        mib["IF-MIB::ifAdminStatus"]]):  # IF-MIB
+                    if not i or n[:3] == 'Aux' or n[:4] == 'Vlan' \
                     or n[:11] == 'InLoopBack':
                         continue
                     else:
                         n = self.profile.convert_interface_name(n)
                         admin_status.update({n: int(s) == 1})
+                        ifindexes.update({n: int(i)})
             except self.snmp.TimeOutError:
                 pass
         else:
             ports = self.profile.get_ports(self)
             for p in ports:
                 admin_status.update({p['port']: p['admin_state']})
-        
+        print "DEBUGA:\n\tadmin_status %r\n\tifindexes %r" % (admin_status, ifindexes)
         lldp = self.get_lldp_ports() 
         stp = self.get_stp_ports() 
         # Get switchports
         for swp in self.scripts.get_switchport():
             admin = admin_status[swp["interface"]]
+            ifindex = ifindexes[swp["interface"]]
             name = swp["interface"]
             iface = {
                 "name": name,
@@ -75,7 +80,7 @@ class Script(BaseScript):
                     "oper_status": swp["status"],
                     "enabled_afi": ['BRIDGE'],
                     # "mac": mac,
-                    # "snmp_ifindex": self.scripts.get_ifindex(interface=name)
+                    "snmp_ifindex": ifindex
                 }]
             }
             if swp["tagged"]:
@@ -144,8 +149,7 @@ class Script(BaseScript):
                 lldp_enabled = self.snmp.get(pmib + ".24.1.0")
                 if lldp_enabled != 1: #dlinklldpState :enabled(1)
                     return lldp
-                for oid, v in self.snmp.get_tables(
-                    ["1.0.8802.1.1.2.1.1.6.1.2"], bulk=True):
+                for oid, v in self.snmp.get_table("1.0.8802.1.1.2.1.1.6.1.2"):
                     if v != 4: #disabled
                       lldp += [oid] 
             except self.snmp.TimeOutError:
@@ -160,8 +164,7 @@ class Script(BaseScript):
                 stp_enabled = self.snmp.get(pmib + ".6.1.1.0")
                 if stp_enabled != 1: #stpModuleStatus :enabled(1)
                     return stp
-                for oid, v in self.snmp.get_tables(
-                    ["1.3.6.1.2.1.17.2.15.1.4"], bulk=True):
+                for oid, v in self.snmp.get_table("1.3.6.1.2.1.17.2.15.1.4"):
                     if v == 1: #enabled
                       stp += [oid] 
             except self.snmp.TimeOutError:
