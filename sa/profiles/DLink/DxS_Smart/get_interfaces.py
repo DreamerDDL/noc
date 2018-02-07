@@ -148,7 +148,8 @@ class Script(BaseScript):
                 lldp_enabled = self.snmp.get(pmib + ".24.1.0")
                 if lldp_enabled != 1: #dlinklldpState :enabled(1)
                     return lldp
-                for oid, v in self.snmp.get_table("1.0.8802.1.1.2.1.1.6.1.2").items():
+                for oid, v in self.snmp.get_tables(
+                    ["1.0.8802.1.1.2.1.1.6.1.2"], bulk=True):
                     if v != 4: #disabled
                       lldp += [oid] 
             except self.snmp.TimeOutError:
@@ -163,7 +164,8 @@ class Script(BaseScript):
                 stp_enabled = self.snmp.get(pmib + ".6.1.1.0")
                 if stp_enabled != 1: #stpModuleStatus :enabled(1)
                     return stp
-                for oid, v in self.snmp.get_table("1.3.6.1.2.1.17.2.15.1.4").items():
+                for oid, v in self.snmp.get_tables(
+                    ["1.3.6.1.2.1.17.2.15.1.4"], bulk=True):
                     if v == 1: #enabled
                       stp += [oid] 
             except self.snmp.TimeOutError:
