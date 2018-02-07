@@ -58,7 +58,6 @@ class Script(BaseScript):
             ports = self.profile.get_ports(self)
             for p in ports:
                 admin_status.update({p['port']: p['admin_state']})
-        print "DEBUGA:\n\tadmin_status %r\n\tifindexes %r" % (admin_status, ifindexes)
         lldp = self.get_lldp_ports() 
         stp = self.get_stp_ports() 
         # Get switchports
