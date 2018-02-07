@@ -140,7 +140,7 @@ class Script(BaseScript):
     rx_gvrp = re.compile(
         r"^ (?P<port>\d+(?:[:/]\d+)?)\s+\d+\s+Enabled")
     rx_stp = re.compile(
-        r"Port Index\s?:\s?(?P<port>\d+(?:[:/]\d+)?)\s+.+?"
+        r"Port Index\s*:\s?(?P<port>\d+(?:[:/]\d+)?)\s+.+?"
         r"Port STP\s?(:\s?)?(?P<state>[Ee]nabled|[Dd]isabled)")
     rx_stp1 = re.compile(
         r"Port Index\s+: (?P<port>\d+(?:[:/]\d+)?)\s*\n"
