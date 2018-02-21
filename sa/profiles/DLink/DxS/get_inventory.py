@@ -40,9 +40,9 @@ class Script(BaseScript):
         r"(?P<serial>(\xFF)+)\s+(?P<descr>.+?)\s*$")
     rx_media_type = re.compile(
         r"^\s?(?P<unit>\d+:)?(?P<port>\d+)\s+(\(F\))?\s+(?:SFP (\- )?LC|\-)"
-        r"\s+(?P<vendor>.+)/?\s+(?P<part_no>.+)/?\s+(?P<serial>.+?)/?\s*\n"
+        r"\s+(?P<vendor>.+?)/?\s+(?P<part_no>.+?)/?\s+(?P<serial>.+?)/?\s*\n"
         r"\s+\S+\s*:\S+\s*:\S+\s+(?P<revision>\S+)?\s+\d+\s*\n"
-        r"\s+Compatibility:\s+(Single Mode \(SM\)|Unallocated),"
+        r"\s+Compatibility:\s+(Single Mode( \(SM\))?|Unallocated),"
         r"\s*(?P<mbd>\d+)\s?Mbd,\s*(?P<nm>\d+)\s?nm\n", re.MULTILINE)
     fake_vendors = ["OEM", "CISCO-FINISAR"]
 
