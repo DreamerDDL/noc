@@ -28,6 +28,7 @@ from noc.core.defer import call_later
 from noc.core.bi.decorator import bi_sync
 from .networksegmentprofile import NetworkSegmentProfile
 from .allocationgroup import AllocationGroup
+from .link import Link
 from noc.core.scheduler.job import Job
 from noc.vc.models.vcfilter import VCFilter
 
@@ -329,8 +330,6 @@ class NetworkSegment(Document):
                 else:
                     d1[k] = d2[k]
 
-        services = {}
-        subscribers = {}
         objects = dict(
             (d["object_profile"], d["count"])
             for d in self.managed_objects.values(
@@ -340,9 +339,7 @@ class NetworkSegment(Document):
             ).order_by("count"))
         # Direct services
         mo_ids = self.managed_objects.values_list("id", flat=True)
-        for ss in ServiceSummary.objects.filter(managed_object__in=mo_ids):
-            update_dict(services, SummaryItem.items_to_dict(ss.service))
-            update_dict(subscribers, SummaryItem.items_to_dict(ss.subscriber))
+        services, subscribers = ServiceSummary.get_direct_summary(mo_ids)
         self.direct_services = SummaryItem.dict_to_items(services)
         self.direct_subscribers = SummaryItem.dict_to_items(subscribers)
         self.direct_objects = ObjectSummaryItem.dict_to_items(objects)
@@ -501,6 +498,11 @@ class NetworkSegment(Document):
             from noc.vc.models.vlan import VLAN
             for vlan in VLAN.objects.filter(segment=self.id):
                 vlan.refresh_translation()
+        if hasattr(self, "_changed_fields") and "parent" in self._changed_fields:
+            self.update_access()
+            self.update_links()
+            if self.parent:
+                self.parent.update_links()
 
     @classmethod
     @cachetools.cachedmethod(operator.attrgetter("_border_cache"), lock=lambda _: id_lock)
@@ -562,3 +564,12 @@ class NetworkSegment(Document):
         return ManagedObject.objects.filter(
             segment__in=[s.id for s in cls.get_vlan_domain_segments(segment)]
         ).values_list("id", flat=True)
+
+    def iter_links(self):
+        for link in Link.objects.filter(linked_segments__in=[self.id]):
+            yield link
+
+    def update_links(self):
+        # @todo intersect link only
+        for link in self.iter_links():
+            link.save()

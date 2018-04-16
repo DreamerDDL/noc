@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 # CLI FSM
 # ----------------------------------------------------------------------
-# Copyright (C) 2007-2017 The NOC Project
+# Copyright (C) 2007-2018 The NOC Project
 # See LICENSE for details
 # ----------------------------------------------------------------------
 
@@ -45,6 +45,7 @@ class CLI(object):
     HAS_TCP_KEEPIDLE = hasattr(socket, "TCP_KEEPIDLE")
     HAS_TCP_KEEPINTVL = hasattr(socket, "TCP_KEEPINTVL")
     HAS_TCP_KEEPCNT = hasattr(socket, "TCP_KEEPCNT")
+    HAS_TCP_NODELAY = hasattr(socket, "TCP_NODELAY")
     # Time until sending first keepalive probe
     KEEP_IDLE = 10
     # Keepalive packets interval
@@ -123,6 +124,8 @@ class CLI(object):
             s.setsockopt(
                 socket.IPPROTO_IP, socket.IP_TOS, self.tos
             )
+        if self.HAS_TCP_NODELAY:
+            s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         if self.HAS_TCP_KEEPALIVE:
             s.setsockopt(
                 socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1
@@ -147,13 +150,16 @@ class CLI(object):
                 self.logger.debug("Resetting timeouts")
             self.current_timeout = None
 
-    def execute(self, cmd, obj_parser=None, cmd_next=None, cmd_stop=None):
+    def execute(self, cmd, obj_parser=None, cmd_next=None, cmd_stop=None,
+                ignore_errors=False):
         if self.close_timeout:
             self.logger.debug("Removing close timeout")
             self.ioloop.remove_timeout(self.close_timeout)
             self.close_timeout = None
         self.buffer = ""
         self.command = cmd
+        self.error = None
+        self.ignore_errors = ignore_errors
         if not self.ioloop:
             self.logger.debug("Creating IOLoop")
             self.ioloop = tornado.ioloop.IOLoop()
@@ -200,11 +206,31 @@ class CLI(object):
             self.is_started = True
         # Send command
         # @todo: encode to object's encoding
-        self.send(self.command)
+        if self.profile.batch_send_multiline or self.profile.command_submit not in self.command:
+            yield self.send(self.command)
+        else:
+            # Send multiline commands line-by-line
+            for cmd in self.command.split(self.profile.command_submit):
+                # Send line
+                yield self.send(cmd + self.profile.command_submit)
+                # @todo: Await response
         parser = parser or self.read_until_prompt
         self.result = yield parser()
         self.logger.debug("Command: %s\n%s",
                           self.command.strip(), self.result)
+        if (self.profile.rx_pattern_syntax_error and
+                not self.ignore_errors and
+                parser == self.read_until_prompt and
+                self.profile.rx_pattern_syntax_error.search(self.result)):
+            error_text = self.result
+            if self.profile.send_on_syntax_error:
+                yield self.on_error_sequence(
+                    self.profile.send_on_syntax_error,
+                    self.command,
+                    error_text
+                )
+            self.error = self.script.CLISyntaxError(error_text)
+            self.result = None
         raise tornado.gen.Return(self.result)
 
     def cleaned_input(self, s):
@@ -328,8 +354,16 @@ class CLI(object):
             buffer = self.cleaned_input(buffer + r)
             # Check for syntax error
             if (self.profile.rx_pattern_syntax_error and
+                    not self.ignore_errors and
                     self.profile.rx_pattern_syntax_error.search(self.buffer)):
-                self.error = self.script.CLISyntaxError(self.buffer)
+                error_text = self.buffer
+                if self.profile.send_on_syntax_error:
+                    yield self.on_error_sequence(
+                        self.profile.send_on_syntax_error,
+                        self.command,
+                        error_text
+                    )
+                self.error = self.script.CLISyntaxError(error_text)
                 break
             # Then check for operation error
             if (self.profile.rx_pattern_operation_error and
@@ -687,3 +721,23 @@ class CLI(object):
         if self.profile.shutdown_session:
             self.logger.debug("Shutdown session")
             self.profile.shutdown_session(self.script)
+
+    @tornado.gen.coroutine
+    def on_error_sequence(self, seq, command, error_text):
+        """
+        Process error sequence
+        :param seq:
+        :param command:
+        :param error_text:
+        :return:
+        """
+        if isinstance(seq, six.string_types):
+            self.logger.debug("Recovering from error. Sending %r", seq)
+            yield self.iostream.write(seq)
+        elif callable(seq):
+            if tornado.gen.is_coroutine_function(seq):
+                # Yield coroutine
+                yield seq(self, command, error_text)
+            else:
+                seq = seq(self, command, error_text)
+                yield self.iostream.write(seq)

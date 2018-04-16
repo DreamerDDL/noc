@@ -2,7 +2,7 @@
 # ---------------------------------------------------------------------
 # Generic.get_interface_status_ex
 # ---------------------------------------------------------------------
-# Copyright (C) 2007-2017 The NOC Project
+# Copyright (C) 2007-2018 The NOC Project
 # See LICENSE for details
 # ---------------------------------------------------------------------
 
@@ -18,11 +18,21 @@ class Script(BaseScript):
     interface = IGetInterfaceStatusEx
     requires = []
     HIGH_SPEED = 4294967295
+    MAX_REPETITIONS = 40
+    MAX_GETNEXT_RETIRES = 0
+
+    def get_max_repetitions(self):
+        return self.MAX_REPETITIONS
+
+    def get_getnext_retires(self):
+        return self.MAX_GETNEXT_RETIRES
 
     def get_iftable(self, oid):
         if "::" in oid:
             oid = mib[oid]
-        for oid, v in self.snmp.getnext(oid, max_repetitions=40):
+        for oid, v in self.snmp.getnext(oid,
+                                        max_repetitions=self.get_max_repetitions(),
+                                        max_retries=self.get_getnext_retires()):
             yield int(oid.rsplit(".", 1)[-1]), v
 
     def apply_table(self, r, mib, name, f=None):
@@ -55,6 +65,8 @@ class Script(BaseScript):
         self.apply_table(r, "IF-MIB::ifAdminStatus", "admin_status", lambda x: x == 1)
         # Apply ifOperStatus
         self.apply_table(r, "IF-MIB::ifOperStatus", "oper_status", lambda x: x == 1)
+        # Apply dot3StatsDuplexStatus
+        self.apply_table(r, "EtherLike-MIB::dot3StatsDuplexStatus", "full_duplex", lambda x: x != 2)
         # Apply ifSpeed
         highspeed = set()
         for ifindex, s in self.get_iftable("IF-MIB::ifSpeed"):
@@ -89,11 +101,6 @@ class Script(BaseScript):
         """
         return speed == self.HIGH_SPEED
 
-    def execute(self):
-        r = []
-        if self.has_snmp():
-            try:
-                r = self.get_data()
-            except self.snmp.TimeOutError:
-                pass
+    def execute_snmp(self):
+        r = self.get_data()
         return r

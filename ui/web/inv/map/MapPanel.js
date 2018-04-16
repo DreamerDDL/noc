@@ -367,7 +367,9 @@ Ext.define("NOC.inv.map.MapPanel", {
             }
         });
         me.objectNodes[data.id] = node;
-        me.objectsList.push(data.id);
+        if(data.type === "managedobject") {
+            me.objectsList.push(data.id)
+        }
         return node;
     },
     //
@@ -482,6 +484,11 @@ Ext.define("NOC.inv.map.MapPanel", {
             case "link":
                 me.app.inspectLink(data.id);
                 break;
+            case "cloud":
+                view.highlight();
+                me.currentHighlight = view;
+                me.app.inspectCloud(data.id);
+                break
         }
     },
 
@@ -966,7 +973,7 @@ Ext.define("NOC.inv.map.MapPanel", {
         var args = {
             direct_objects: objects,
             subject: __('created from map at ') + Ext.Date.format(new Date(), 'd.m.Y H:i P'),
-            contacts: NOC.username,
+            contacts: NOC.email ? NOC.email : NOC.username,
             start_date: Ext.Date.format(new Date(), 'd.m.Y'),
             start_time: Ext.Date.format(new Date(), 'H:i'),
             stop_time: '12:00',
@@ -1007,11 +1014,7 @@ Ext.define("NOC.inv.map.MapPanel", {
         if(store.getCount() === 0) {
             me.fireEvent("openbasket");
         }
-        store.add({
-            id: objectId,
-            object: objectId,
-            object__label: me.objectNodes[objectId].attributes.attrs.text.text.replace("\n", "")
-        });
+        me.addObjectToBasket(objectId, store);
     },
 
     onSegmentMenuAddToBasket: function() {
@@ -1024,11 +1027,29 @@ Ext.define("NOC.inv.map.MapPanel", {
         Ext.each(this.graph.getElements(), function(e) {
             if('managedobject' === e.get('id').split(':')[0]) {
                 var objectId = Number(e.get('id').split(':')[1]);
-                store.add({
-                    id: objectId,
-                    object: objectId,
-                    object__label: me.objectNodes[objectId].attributes.attrs.text.text
-                });
+                me.addObjectToBasket(objectId, store);
+            }
+        });
+    },
+
+    addObjectToBasket: function(id, store) {
+        Ext.Ajax.request({
+            url: "/sa/managedobject/" + id + "/",
+            method: "GET",
+            success: function(response) {
+                var data = Ext.decode(response.responseText);
+                var object = {
+                    id: id,
+                    object: id,
+                    object__label: data.name,
+                    address: data.address,
+                    platform: data.platform__label,
+                    time: data.time_pattern
+                };
+                store.add(object);
+            },
+            failure: function() {
+                NOC.msg.failed(__("Failed to get object data"));
             }
         });
     },

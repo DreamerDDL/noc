@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 # ManagedObjectProfile
 # ----------------------------------------------------------------------
-# Copyright (C) 2007-2017 The NOC Project
+# Copyright (C) 2007-2018 The NOC Project
 # See LICENSE for details
 # ----------------------------------------------------------------------
 
@@ -19,7 +19,7 @@ import cachetools
 from noc.main.models.style import Style
 from .authprofile import AuthProfile
 from noc.lib.validators import is_fqdn
-from noc.lib.stencil import stencil_registry
+from noc.core.stencil import stencil_registry
 from noc.core.model.fields import (TagsField, PickledField,
                                    DocumentReferenceField)
 from noc.core.model.decorator import on_save, on_init, on_delete_check
@@ -32,6 +32,7 @@ from .objectmap import ObjectMap
 from noc.sa.interfaces.base import (DictListParameter, ObjectIdParameter, BooleanParameter,
                                     IntParameter, StringParameter)
 from noc.core.bi.decorator import bi_sync
+from noc.core.window import wf_choices
 
 m_valid = DictListParameter(attrs={
     "metric_type": ObjectIdParameter(required=True),
@@ -42,12 +43,7 @@ m_valid = DictListParameter(attrs={
         choices=["m", "t"],
         default="m"),
     "window": IntParameter(default=1),
-    "window_function": StringParameter(
-        choices=[
-            "handler", "last", "avg",
-            "percentile", "q1", "q2", "q3",
-            "p95", "p99"],
-        default="last"),
+    "window_function": StringParameter(choices=[x[0] for x in wf_choices], default="last"),
     "window_config": StringParameter(default=""),
     "window_related": BooleanParameter(default=False),
     "low_error": IntParameter(required=False),
@@ -57,7 +53,8 @@ m_valid = DictListParameter(attrs={
     "low_error_weight": IntParameter(default=10),
     "low_warn_weight": IntParameter(default=1),
     "high_warn_weight": IntParameter(default=1),
-    "high_error_weight": IntParameter(default=10)
+    "high_error_weight": IntParameter(default=10),
+    "threshold_profile": ObjectIdParameter(required=False)
 })
 
 id_lock = Lock()
@@ -536,6 +533,24 @@ class ManagedObjectProfile(models.Model):
             except ValueError as e:
                 raise ValueError(e)
         super(ManagedObjectProfile, self).save(force_insert, force_update)
+
+    @classmethod
+    def get_max_metrics_interval(cls, managed_object_profiles=None):
+        Q = models.Q
+        op_query = ((Q(enable_box_discovery_metrics=True) & Q(enable_box_discovery=True)) |
+                    (Q(enable_periodic_discovery=True) & Q(enable_periodic_discovery_metrics=True)))
+        if managed_object_profiles:
+            op_query &= Q(id__in=managed_object_profiles)
+        r = set()
+        for mop in ManagedObjectProfile.objects.filter(op_query).exclude(metrics=[]).exclude(metrics=None):
+            if not mop.metrics:
+                continue
+            for m in mop.metrics:
+                if m["enable_box"]:
+                    r.add(mop.box_discovery_interval)
+                if m["enable_periodic"]:
+                    r.add(mop.periodic_discovery_interval)
+        return max(r) if r else 0
 
 
 def apply_discovery_jobs(profile_id, box_changed, periodic_changed):

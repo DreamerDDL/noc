@@ -216,7 +216,7 @@ class Service(object):
             )
 
     def handle_callback_exception(self, callback):
-        sys.stdout.write("Exception in callback %r\n" % callback)
+        sys.stdout.write("Exception in callback %s\n" % repr(callback))
         error_report()
 
     @classmethod
@@ -275,6 +275,8 @@ class Service(object):
         Log a separator string to visually split log
         """
         self.logger.warn(symbol * length)
+        if config.features.forensic:
+            self.logger.warn("[noc.core.forensic] [=Process restarted]")
 
     def setup_signal_handlers(self):
         """

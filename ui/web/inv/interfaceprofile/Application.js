@@ -14,7 +14,9 @@ Ext.define("NOC.inv.interfaceprofile.Application", {
         "NOC.main.notificationgroup.LookupField",
         "Ext.ux.form.MultiIntervalField",
         "NOC.pm.metrictype.LookupField",
-        "NOC.main.remotesystem.LookupField"
+        "NOC.main.remotesystem.LookupField",
+        "NOC.main.ref.windowfunction.LookupField",
+        "NOC.pm.thresholdprofile.LookupField"
     ],
     model: "NOC.inv.interfaceprofile.Model",
     search: true,
@@ -293,18 +295,7 @@ Ext.define("NOC.inv.interfaceprofile.Application", {
                                 dataIndex: "window_function",
                                 width: 70,
                                 editor: {
-                                    xtype: "combobox",
-                                    store: [
-                                        ["last", "Last Value"],
-                                        ["avg", "Average"],
-                                        ["percentile", "Percentile"],
-                                        ["q1", "1st quartile"],
-                                        ["q2", "2st quartile"],
-                                        ["q3", "3st quartile"],
-                                        ["p95", "95% percentile"],
-                                        ["p99", "99% percentile"],
-                                        ["handler", "Handler"]
-                                    ]
+                                    xtype: "main.ref.windowfunction.LookupField"
                                 }
                             },
                             {
@@ -344,6 +335,15 @@ Ext.define("NOC.inv.interfaceprofile.Application", {
                                 editor: "textfield",
                                 align: "right",
                                 renderer: NOC.render.Size
+                            },
+                            {
+                                text: __("Profile"),
+                                dataIndex: "threshold_profile",
+                                width: 150,
+                                editor: {
+                                    xtype: "pm.thresholdprofile.LookupField"
+                                },
+                                renderer: NOC.render.Lookup("threshold_profile")
                             }
                         ]
 

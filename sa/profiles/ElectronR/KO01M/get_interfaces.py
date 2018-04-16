@@ -17,7 +17,7 @@ class Script(BaseScript):
     interface = IGetInterfaces
     cache = True
 
-    def execute(self):
+    def execute_snmp(self):
         i = [1, 2, 3, 4, 5]
         interfaces = []
         for ii in i:
@@ -29,7 +29,7 @@ class Script(BaseScript):
                 admin_status = True
                 oper_status = True
             iface = {
-                "type": "dry",
+                "type": "physical",
                 "name": ii,
                 "admin_status": admin_status,
                 "oper_status": oper_status,

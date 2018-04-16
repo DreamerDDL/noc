@@ -2,17 +2,15 @@
 # ---------------------------------------------------------------------
 # Extreme.XOS.get_interfaces
 # ---------------------------------------------------------------------
-# Copyright (C) 2007-2017 The NOC Project
+# Copyright (C) 2007-2018 The NOC Project
 # See LICENSE for details
 # ---------------------------------------------------------------------
 
 # Python modules
 import re
-from collections import defaultdict
 # NOC modules
 from noc.core.script.base import BaseScript
 from noc.sa.interfaces.igetinterfaces import IGetInterfaces
-from noc.core.ip import IPv4
 #
 # @todo: IPv6 Support, only SNMP version, vrf support
 #
@@ -43,26 +41,26 @@ class Script(BaseScript):
     )
     rx_status_tag = re.compile(
         r"^Admin\s+State:\s+(?P<admin_status>\S+)\s+Tagging:(\s+)?"
-        r"(?P<tagmode>.+?)$", re.MULTILINE | re.IGNORECASE | re.DOTALL
+        r"(?P<tagmode>.+?)$", re.MULTILINE | re.DOTALL
     )
     rx_tag = re.compile(
         r"^802.1Q\s+Tag\s+(?P<tag>\d+)\s*$", re.MULTILINE | re.IGNORECASE
     )
     rx_tagloop = re.compile(
         r"^Untagged\s+\(Internal\s+tag\s+(?P<tag>\d+)\)*$",
-        re.MULTILINE | re.IGNORECASE
+        re.MULTILINE
     )
     rx_svidescr = re.compile(
         r"^Description:\s+(?P<description>.+?)$",
-        re.MULTILINE | re.IGNORECASE
+        re.MULTILINE
     )
     rx_ip = re.compile(
-        r"^Primary\s+IP(\s+)?:\s+(?P<address>\S+)$",
-        re.MULTILINE | re.IGNORECASE
+        r"^Primary\s+IP(\s+)?:\s+(?P<address>\d+\S+)$",
+        re.MULTILINE
     )
     rx_sec_ip = re.compile(
-        r"^Secondary\s+IPs(\s+)?:\s+(?P<address>.+?)$",
-        re.MULTILINE | re.IGNORECASE
+        r"^Secondary\s+IPs(\s+)?:\s+(?P<address>.+?)IPv6",
+        re.MULTILINE | re.DOTALL
     )
 
     def execute(self):
@@ -94,15 +92,14 @@ class Script(BaseScript):
             except self.snmp.TimeOutError:
                 ifidxs = {}
         # Get port-to-vlan mappings
-        pvm = {}
         switchports = {}  # interface -> (untagged, tagged)
         for swp in self.scripts.get_switchport():
             switchports[swp["interface"]] = (
-                    swp["untagged"] if "untagged" in swp else None,
-                    swp["tagged"],
-                    swp["description"],
-                    swp["status"]
-                    )
+                swp["untagged"] if "untagged" in swp else None,
+                swp["tagged"],
+                swp["description"],
+                swp["status"]
+            )
 
         interfaces = []
         aggrifaces = []
@@ -138,7 +135,7 @@ class Script(BaseScript):
                     enabled_afi += ["IPv4"]
                 mt = self.rx_sec_ip.search(sv.strip())  # Secondary IP's
                 if mt:
-                    sec_ip = mt.group("address")
+                    sec_ip = mt.group("address").replace("\n", "")
                     for s_ip in sec_ip.split(","):
                         s_ip = s_ip.strip()
                         ip_list += [s_ip]
@@ -150,15 +147,15 @@ class Script(BaseScript):
                 "mac": mac,
                 "description": description,
                 "subinterfaces": [{
-                        "name": sviintrf,
-                        "description": description,
-                        "admin_status": a_stat,
-                        "oper_status": a_stat,
-                        "enabled_afi": enabled_afi,
-                        ip_interfaces: ip_list,
-                        "mac": mac,
-                        "vlan_ids": self.expand_rangelist(vltag),
-                        }]
+                    "name": sviintrf,
+                    "description": description,
+                    "admin_status": a_stat,
+                    "oper_status": a_stat,
+                    "enabled_afi": enabled_afi,
+                    ip_interfaces: ip_list,
+                    "mac": mac,
+                    "vlan_ids": self.expand_rangelist(vltag),
+                }]
             }
             interfaces += [iface]
         # Get L2 interfaces
@@ -204,48 +201,48 @@ class Script(BaseScript):
                         iface["subinterfaces"][0]["untagged_vlan"] = ""
                     aggriface["description"] = switchports[ifname][2]
                     aggrifaces += [aggriface]
-                else:
-                    iftype = "physical"
-                    iface = {
+
+                iftype = "physical"
+                iface = {
+                    "name": ifname,
+                    "type": iftype,
+                    "admin_status": switchports[ifname][3],
+                    "oper_status": o_stat,
+                    "mac": mac,
+                    "description": switchports[ifname][2],
+                    "snmp_ifindex": (ifidxs[ifname] if ifidxs else None),
+                    "subinterfaces": [{
                         "name": ifname,
-                        "type": iftype,
+                        "description": switchports[ifname][2],
                         "admin_status": switchports[ifname][3],
                         "oper_status": o_stat,
+                        "enabled_afi": ["BRIDGE"],
                         "mac": mac,
-                        "description": switchports[ifname][2],
-                        "snmp_ifindex": (ifidxs[ifname] if ifidxs else None),
-                        "subinterfaces": [{
-                            "name": ifname,
-                            "description": switchports[ifname][2],
-                            "admin_status": switchports[ifname][3],
-                            "oper_status": o_stat,
-                            "enabled_afi": ["BRIDGE"],
-                            "mac": mac,
-                            "snmp_ifindex": (
-                                ifidxs[ifname] if ifidxs else None
-                            )
-                        }]
-                    }
+                        "snmp_ifindex": (
+                            ifidxs[ifname] if ifidxs else None
+                        )
+                    }]
+                }
 
-                    if switchports[ifname][1]:
-                        iface["subinterfaces"][0]["tagged_vlans"] = \
-                            switchports[ifname][1]
-                    else:
-                        iface["subinterfaces"][0]["tagged_vlans"] = []
-                    if switchports[ifname][0]:
-                        iface["subinterfaces"][0]["untagged_vlan"] = \
-                            switchports[ifname][0]
-                    else:
-                        iface["subinterfaces"][0]["untagged_vlan"] = ""
-                    iface["description"] = switchports[ifname][2]
+                if switchports[ifname][1]:
+                    iface["subinterfaces"][0]["tagged_vlans"] = \
+                        switchports[ifname][1]
+                else:
+                    iface["subinterfaces"][0]["tagged_vlans"] = []
+                if switchports[ifname][0]:
+                    iface["subinterfaces"][0]["untagged_vlan"] = \
+                        switchports[ifname][0]
+                else:
+                    iface["subinterfaces"][0]["untagged_vlan"] = ""
+                iface["description"] = switchports[ifname][2]
 
-                    # Portchannel member
-                    if ifname in portchannel_members:
-                        ai, is_lacp = portchannel_members[ifname]
-                        iface["aggregated_interface"] = ai
-                        if is_lacp:
-                            iface["enabled_protocols"] = ["LACP"]
+                # Portchannel member
+                if ifname in portchannel_members:
+                    ai, is_lacp = portchannel_members[ifname]
+                    iface["aggregated_interface"] = ai
+                    if is_lacp:
+                        iface["enabled_protocols"] = ["LACP"]
 
-                    interfaces += [iface]
+                interfaces += [iface]
         interfaces += aggrifaces
         return [{"interfaces": interfaces}]

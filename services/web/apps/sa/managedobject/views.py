@@ -12,7 +12,6 @@ import zlib
 # Django modules
 from django.http import HttpResponse
 # Third-party modules
-import gridfs
 import ujson
 from mongoengine.queryset import Q as MQ
 # NOC modules
@@ -23,12 +22,16 @@ from noc.sa.models.managedobject import (ManagedObject,
 from noc.sa.models.useraccess import UserAccess
 from noc.sa.models.interactionlog import InteractionLog
 from noc.sa.models.managedobjectselector import ManagedObjectSelector
+from noc.sa.models.profile import Profile
 from noc.inv.models.link import Link
 from noc.inv.models.interface import Interface
 from noc.inv.models.interfaceprofile import InterfaceProfile
 from noc.inv.models.subinterface import SubInterface
+from noc.inv.models.platform import Platform
+from noc.inv.models.firmware import Firmware
 from noc.lib.app.modelinline import ModelInline
 from noc.lib.app.repoinline import RepoInline
+from noc.lib.app.decorators.handlerfield import handler_field
 from noc.main.models.resourcestate import ResourceState
 from noc.project.models.project import Project
 from noc.vc.models.vcdomain import VCDomain
@@ -45,6 +48,11 @@ from noc.core.defer import call_later
 from noc.core.translation import ugettext as _
 
 
+@handler_field(
+    "config_filter_handler",
+    "config_diff_filter_handler",
+    "config_validation_handler"
+)
 class ManagedObjectApplication(ExtModelApplication):
     """
     ManagedObject application
@@ -61,13 +69,25 @@ class ManagedObjectApplication(ExtModelApplication):
     extra_permissions = ["alarm", "change_interface"]
     implied_permissions = {
         "read": [
-            "inv:networksegment:lookup"
+            "inv:networksegment:lookup",
+            "main:handler:lookup"
         ]
     }
     order_map = {
-        "profile": "SELECT name FROM main_ordermap WHERE model = 'sa.Profile' AND ref_id = sa_managedobject.profile",
-        "platform": "SELECT name FROM main_ordermap WHERE model = 'inv.Platform' AND ref_id = sa_managedobject.platform",
-        "version": "SELECT name FROM main_ordermap WHERE model = 'inv.Firmware' AND ref_id = sa_managedobject.version"
+        "address": " cast_test_to_inet(address) ",
+        "-address": " cast_test_to_inet(address) ",
+        "profile": 'CASE %s END' % ' '.join(['WHEN %s=\'%s\' THEN %s' % ("profile", pk, i) for i, pk in enumerate(
+            Profile.objects.filter().order_by("name").values_list("id"))]),
+        "-profile": 'CASE %s END' % ' '.join(['WHEN %s=\'%s\' THEN %s' % ("profile", pk, i) for i, pk in enumerate(
+            Profile.objects.filter().order_by("-name").values_list("id"))]),
+        "platform": 'CASE %s END' % ' '.join(['WHEN %s=\'%s\' THEN %s' % ("platform", pk, i) for i, pk in enumerate(
+            Platform.objects.filter().order_by("name").values_list("id"))]),
+        "-platform": 'CASE %s END' % ' '.join(['WHEN %s=\'%s\' THEN %s' % ("platform", pk, i) for i, pk in enumerate(
+            Platform.objects.filter().order_by("-name").values_list("id"))]),
+        "version": 'CASE %s END' % ' '.join(['WHEN %s=\'%s\' THEN %s' % ("version", pk, i) for i, pk in enumerate(
+            Firmware.objects.filter().order_by("version").values_list("id"))]),
+        "-version": 'CASE %s END' % ' '.join(['WHEN %s=\'%s\' THEN %s' % ("version", pk, i) for i, pk in enumerate(
+            Firmware.objects.filter().order_by("-version").values_list("id"))])
     }
 
     DISCOVERY_JOBS = [
@@ -132,14 +152,14 @@ class ManagedObjectApplication(ExtModelApplication):
         # Get links
         result = []
         for link in Link.object_links(o):
-            l = []
+            ifaces = []
             r = []
             for i in link.interfaces:
                 if i.managed_object.id == o.id:
-                    l += [i]
+                    ifaces += [i]
                 else:
                     r += [i]
-            for li, ri in zip(l, r):
+            for li, ri in zip(ifaces, r):
                 result += [{
                     "link_id": str(link.id),
                     "local_interface": str(li.id),
@@ -156,10 +176,6 @@ class ManagedObjectApplication(ExtModelApplication):
                     "last_seen": link.last_seen.isoformat() if link.last_seen else None
                 }]
         return result
-
-    def check_mrt_access(self, request, name):
-        # @todo: Check object's access
-        return super(ManagedObjectApplication, self).check_mrt_access(request, name)
 
     @view(url="^(?P<id>\d+)/discovery/$", method=["GET"],
           access="read", api=True)
@@ -209,7 +225,7 @@ class ManagedObjectApplication(ExtModelApplication):
           access="create", api=True,
           validate={
               "ids": ListOfParameter(element=ModelParameter(ManagedObject), convert=True)
-          })
+    })
     def api_action_set_managed(self, request, ids):
         for o in ids:
             if not o.has_access(request.user):
@@ -222,7 +238,7 @@ class ManagedObjectApplication(ExtModelApplication):
           access="create", api=True,
           validate={
               "ids": ListOfParameter(element=ModelParameter(ManagedObject), convert=True)
-          })
+    })
     def api_action_set_unmanaged(self, request, ids):
         for o in ids:
             if not o.has_access(request.user):
@@ -322,7 +338,7 @@ class ManagedObjectApplication(ExtModelApplication):
                 # Broadcast
                 label = ", ".join(
                     "%s:%s" % (ii.managed_object.name, ii.name)
-                               for ii in link.other(i))
+                    for ii in link.other(i))
             return {
                 "id": str(link.id),
                 "label": label
@@ -335,7 +351,7 @@ class ManagedObjectApplication(ExtModelApplication):
         # Physical interfaces
         # @todo: proper ordering
         default_state = ResourceState.get_default()
-        style_cache = {}  ## profile_id -> css_style
+        style_cache = {}  # profile_id -> css_style
         l1 = [
             {
                 "id": str(i.id),
@@ -371,9 +387,8 @@ class ManagedObjectApplication(ExtModelApplication):
                 "members": [j.name for j in Interface.objects.filter(
                     managed_object=o.id, aggregated_interface=i.id)],
                 "row_class": get_style(i)
-            } for i in
-              Interface.objects.filter(managed_object=o.id,
-                                       type="aggregated")
+            } for i in Interface.objects.filter(managed_object=o.id,
+                                                type="aggregated")
         ]
         # L2 interfaces
         l2 = [
@@ -398,8 +413,7 @@ class ManagedObjectApplication(ExtModelApplication):
                 "vlan": i.vlan_ids,
                 "vrf": i.forwarding_instance.name if i.forwarding_instance else "",
                 "mac": i.mac
-            } for i in
-              SubInterface.objects.filter(managed_object=o.id).filter(q)
+            } for i in SubInterface.objects.filter(managed_object=o.id).filter(q)
         ]
         return {
             "l1": sorted_iname(l1),
@@ -476,7 +490,7 @@ class ManagedObjectApplication(ExtModelApplication):
           access="launch", api=True,
           validate={
               "ids": ListOfParameter(element=ModelParameter(ManagedObject), convert=True)
-          })
+    })
     def api_action_run_discovery(self, request, ids):
         d = 0
         for o in ids:
@@ -553,7 +567,7 @@ class ManagedObjectApplication(ExtModelApplication):
         o = self.get_object_or_404(ManagedObject, id=id)
         if not o.has_access(request.user):
             return self.response_forbidden("Access denied")
-        fs = gridfs.GridFS(get_db(), "noc.joblog")
+        # fs = gridfs.GridFS(get_db(), "noc.joblog")
         key = "discovery-%s-%s" % (job, o.id)
         d = get_db()["noc.joblog"].find_one({"_id": key})
         if d and d["log"]:
@@ -724,11 +738,11 @@ class ManagedObjectApplication(ExtModelApplication):
                 "message": message % args
             }
 
-        l = self.get_object_or_404(Link, id=link_id)
-        if len(l.interfaces) != 2:
+        link = self.get_object_or_404(Link, id=link_id)
+        if len(link.interfaces) != 2:
             return error_status("Cannot fix link: Not P2P")
-        mo1 = l.interfaces[0].managed_object
-        mo2 = l.interfaces[1].managed_object
+        mo1 = link.interfaces[0].managed_object
+        mo2 = link.interfaces[1].managed_object
         if mo1.id == mo2.id:
             return error_status("Cannot fix circular links")
         # Ping each other
@@ -765,7 +779,7 @@ class ManagedObjectApplication(ExtModelApplication):
             return error_status("[%s] Cannot find %s in the MAC address table",
                                 mo2.name, mo1.name)
         self.logger.info("%s:%s -- %s:%s", mo1.name, i1, mo2.name, i2)
-        if l.interfaces[0].name == i1 and l.interfaces[1].name == i2:
+        if link.interfaces[0].name == i1 and link.interfaces[1].name == i2:
             return success_status("Linked properly")
         # Get interfaces
         iface1 = mo1.get_interface(i1)
@@ -777,7 +791,7 @@ class ManagedObjectApplication(ExtModelApplication):
             return error_status("[%s] Interface not found: %s",
                                 mo2.name, i2)
         # Check we can relink
-        if_ids = [i.id for i in l.interfaces]
+        if_ids = [i.id for i in link.interfaces]
         if iface1.id not in if_ids and iface1.is_linked:
             return error_status(
                 "[%s] %s is already linked",
@@ -790,6 +804,6 @@ class ManagedObjectApplication(ExtModelApplication):
             )
         # Relink
         self.logger.info("Relinking")
-        l.delete()
+        link.delete()
         iface1.link_ptp(iface2, method="macfix")
         return success_status("Relinked")

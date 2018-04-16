@@ -14,8 +14,10 @@ Ext.define("NOC.sa.managedobjectprofile.Application", {
         "NOC.sa.authprofile.LookupField",
         "NOC.main.style.LookupField",
         "NOC.main.ref.stencil.LookupField",
+        "NOC.main.ref.windowfunction.LookupField",
         "Ext.ux.form.MultiIntervalField",
         "NOC.pm.metrictype.LookupField",
+        "NOC.pm.thresholdprofile.LookupField",
         "NOC.main.remotesystem.LookupField"
     ],
     model: "NOC.sa.managedobjectprofile.Model",
@@ -204,7 +206,7 @@ Ext.define("NOC.sa.managedobjectprofile.Application", {
                                         ["SC", __("SNMP, CLI")],
                                         ["CS", __("CLI, SNMP")]
                                     ],
-                                    value: "SC"
+                                    value: "CS"
                                 },
                                 {
                                     name: "cli_session_policy",
@@ -1151,18 +1153,7 @@ Ext.define("NOC.sa.managedobjectprofile.Application", {
                                             dataIndex: "window_function",
                                             width: 70,
                                             editor: {
-                                                xtype: "combobox",
-                                                store: [
-                                                    ["last", "Last Value"],
-                                                    ["avg", "Average"],
-                                                    ["percentile", "Percentile"],
-                                                    ["q1", "1st quartile"],
-                                                    ["q2", "2st quartile"],
-                                                    ["q3", "3st quartile"],
-                                                    ["p95", "95% percentile"],
-                                                    ["p99", "99% percentile"],
-                                                    ["handler", "Handler"]
-                                                ]
+                                                xtype: "main.ref.windowfunction.LookupField"
                                             }
                                         },
                                         {
@@ -1203,42 +1194,16 @@ Ext.define("NOC.sa.managedobjectprofile.Application", {
                                             editor: "textfield",
                                             align: "right",
                                             renderer: NOC.render.Size
+                                        },
+                                        {
+                                            text: __("Profile"),
+                                            dataIndex: "threshold_profile",
+                                            width: 150,
+                                            editor: {
+                                                xtype: "pm.thresholdprofile.LookupField"
+                                            },
+                                            renderer: NOC.render.Lookup("threshold_profile")
                                         }
-                                        /*
-                                        {
-                                            text: __("Low Error Weight"),
-                                            dataIndex: "low_error_weight",
-                                            width: 60,
-                                            editor: "textfield",
-                                            align: "right",
-                                            renderer: NOC.render.Size
-                                        },
-                                        {
-                                            text: __("Low Warn Wight"),
-                                            dataIndex: "low_warn_weight",
-                                            width: 60,
-                                            editor: "textfield",
-                                            align: "right",
-                                            renderer: NOC.render.Size
-                                        },
-                                        {
-                                            text: __("High Warn Wight"),
-                                            dataIndex: "high_warn_weight",
-                                            width: 60,
-                                            editor: "textfield",
-                                            align: "right",
-                                            renderer: NOC.render.Size
-                                        },
-                                        {
-                                            text: __("High Error Wight"),
-                                            dataIndex: "high_error_weight",
-                                            width: 60,
-                                            editor: "textfield",
-                                            align: "right",
-                                            renderer: NOC.render.Size
-                                        }
-                                        */
-
                                     ]
 
                                 }

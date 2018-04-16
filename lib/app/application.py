@@ -19,7 +19,6 @@ from django.http import (HttpResponse, HttpResponseRedirect,
 from django.shortcuts import render_to_response
 from django.db import connection
 from django.shortcuts import get_object_or_404
-from django.contrib import messages
 from django.utils.html import escape
 from django.template import loader
 from django import forms
@@ -30,11 +29,12 @@ from django.http import Http404
 import ujson
 import six
 # NOC modules
-from .access import HasPerm, Permit, Deny
-from .site import site
 from noc.lib.forms import NOCForm
 from noc import settings
 from noc.sa.interfaces.base import DictParameter
+from noc.core.cache.base import cache
+from .access import HasPerm, Permit, Deny
+from .site import site
 
 
 def view(url, access, url_name=None, menu=None, method=None, validate=None,
@@ -99,7 +99,6 @@ class ApplicationBase(type):
     """
 
     def __new__(cls, name, bases, attrs):
-        global site
         m = type.__new__(cls, name, bases, attrs)
         for name in attrs:
             m.add_to_class(name, attrs[name])
@@ -227,7 +226,15 @@ class Application(object):
         """
         Send a message to user
         """
-        messages.info(request, unicode(message))
+        if "noc_user" in request.COOKIES:
+            session_id = request.COOKIES["noc_user"].rsplit("|", 1)[-1]
+            key = "msg-%s" % session_id
+            cache.set(
+                key,
+                ujson.dumps([message]),
+                ttl=30,
+                version=1
+            )
 
     def get_template_path(self, template):
         """
@@ -586,81 +593,6 @@ class Application(object):
             return self.TZ.localize(v).isoformat()
         else:
             raise Exception("Invalid to_json type")
-
-    def check_mrt_access(self, request, name):
-        mc = self.mrt_config[name]
-        if "access" not in mc:
-            return True
-        access = mc["access"]
-        if isinstance(access, bool):
-            access = Permit() if access else Deny()
-        elif isinstance(access, six.string_types):
-            access = HasPerm(access)
-        else:
-            access = access
-        return access.check(self, request.user)
-
-    @view(url="^mrt/(?P<name>[^/]+)/$", method=["POST"],
-          access=True, api=True)
-    def api_run_mrt(self, request, name):
-        from noc.sa.models.reducetask import ReduceTask
-        from noc.sa.models.managedobjectselector import ManagedObjectSelector
-
-        # Check MRT configured
-        if name not in self.mrt_config:
-            return self.response_not_found("MRT %s is not found" % name)
-        # Check MRT access
-        if not self.check_mrt_access(request, name):
-            return self.response_forbidden("Forbidden")
-        #
-        data = ujson.loads(request.raw_post_data)
-        if "selector" not in data:
-            return self.response_bad_request("'selector' is missed")
-        # Run MRT
-        mc = self.mrt_config[name]
-        map_params = data.get("map_params", {})
-        map_params = dict((str(k), v) for k, v in map_params.iteritems())
-        objects = ManagedObjectSelector.resolve_expression(data["selector"])
-        task = ReduceTask.create_task(
-            objects,
-            "pyrule:mrt_result", {},
-            mc["map_script"], map_params,
-            mc.get("timeout", 0)
-        )
-        return task.id
-
-    @view(url="^mrt/(?P<name>[^/]+)/(?P<task>\d+)/$", method=["GET"],
-          access=True, api=True)
-    def api_get_mrt_result(self, request, name, task):
-        from noc.sa.models.reducetask import ReduceTask
-
-        # Check MRT configured
-        if name not in self.mrt_config:
-            return self.response_not_found("MRT %s is not found" % name)
-        # Check MRT access
-        if not self.check_mrt_access(request, name):
-            return self.response_forbidden("Forbidden")
-        #
-        t = self.get_object_or_404(ReduceTask, id=int(task))
-        try:
-            r = t.get_result(block=False)
-        except ReduceTask.NotReady:
-            # Not ready
-            completed = t.maptask_set.filter(status__in=("C", "F")).count()
-            total = t.maptask_set.count()
-            return {
-                "ready": False,
-                "progress": int(completed * 100 / total),
-                "max_timeout": (t.stop_time - datetime.datetime.now()).seconds,
-                "result": None
-            }
-        # Return result
-        return {
-            "ready": True,
-            "progress": 100,
-            "max_timeout": 0,
-            "result": r
-        }
 
     @view(url="^launch_info/$", method=["GET"],
           access="launch", api=True)

@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 # Cisco.SMB.get_interfaces
 # ----------------------------------------------------------------------
-# Copyright (C) 2007-2017 The NOC Project
+# Copyright (C) 2007-2018 The NOC Project
 # See LICENSE for details
 # ----------------------------------------------------------------------
 
@@ -18,10 +18,19 @@ class Script(BaseScript):
     name = "Cisco.SMB.get_interfaces"
     interface = IGetInterfaces
 
-    inttypes = {
+    rx_list = re.compile(
+        r"^(?P<name>\S+)\s+(?P<type>\S+)\s+((?P<duplex>\S+)\s+)?"
+        r"(?P<speed>\S+)\s+(?P<neg>\S+)\s+(?P<flow>\S+)\s+"
+        r"(?P<admin_state>(up|down))\s*((?P<back_pressure>\S+)\s+"
+        r"(?P<mdix_mode>\S+)\s*)?$",
+        re.IGNORECASE
+    )
+
+    INTERFACE_TYPES = {
         "Et": "physical",    # Ethernet
         "Fa": "physical",    # FastEthernet
         "Gi": "physical",    # GigabitEthernet
+        "Te": "physical",    # TenGigabitEthernet
         "Lo": "loopback",    # Loopback
         "Po": "aggregated",  # Port-channel/Portgroup
         "Tu": "tunnel",      # Tunnel
@@ -36,8 +45,8 @@ class Script(BaseScript):
             "type": "ip",
             "interfaces": []
         }]
-
         interfaces = []
+
         # IPv4 interfaces:
         show_ip_int = self.cli("show ip int")
         for row in parse_table(show_ip_int):
@@ -47,10 +56,6 @@ class Script(BaseScript):
             except ValueError:
                 # skip gateway activity status for switch-mode
                 continue
-            for key in self.inttypes.keys():
-                if re.match(key, iface, re.IGNORECASE):
-                    inttype = self.inttypes[key]
-                    break
             status = row[2].strip()
             try:
                 admin_status = status.split("/")[0].lower() == 'up'
@@ -62,7 +67,7 @@ class Script(BaseScript):
                 oper_status = True
             interface = {
                 "name": iface,
-                "type": inttype,
+                "type": self.INTERFACE_TYPES.get(iface[:2], "unknown"),
                 "admin_status": admin_status,
                 "oper_status": oper_status,
                 "subinterfaces": [{
@@ -77,6 +82,15 @@ class Script(BaseScript):
 
         # TODO: ipv6 interfaces
 
+        # Get portchannes
+        portchannel_members = {}  # member -> (portchannel, type)
+        with self.cached():
+            for pc in self.scripts.get_portchannel():
+                i = pc["interface"]
+                t = pc["type"] == "L"
+                for m in pc["members"]:
+                    portchannel_members[m] = (i, t)
+
         # Physical interfaces:
         phys_int = []
         show_int_status = self.cli("show interfaces status")
@@ -86,14 +100,13 @@ class Script(BaseScript):
             except ValueError:
                 # skip header for Port-Channel section
                 continue
-            for key in self.inttypes.keys():
-                if re.match(key, iface, re.IGNORECASE):
-                    inttype = self.inttypes[key]
-                    break
-            oper_status = row[6].strip().lower() == 'up'
+            try:
+                oper_status = row[6].strip().lower() == 'up'
+            except IndexError:
+                oper_status = row[5].strip().lower() == 'up'
             interface = {
                 "name": iface,
-                "type": inttype,
+                "type": self.INTERFACE_TYPES.get(iface[:2], "unknown"),
                 "oper_status": oper_status,
                 "subinterfaces": [{
                     "name": iface,
@@ -101,19 +114,18 @@ class Script(BaseScript):
                     "enabled_afi": ["BRIDGE"]
                 }]
             }
+            # Portchannel member
+            if iface in portchannel_members:
+                ai, is_lacp = portchannel_members[iface]
+                interface["aggregated_interface"] = ai
+                """
+                if is_lacp:
+                    iface["enabled_protocols"] += ["LACP"]
+                """
             phys_int.append(interface)
 
         # refine admin status:
-        show_int_conf = self.cli(
-            "show interfaces configuration",
-            list_re=re.compile(
-                r"^(?P<name>\S+)\s+(?P<type>\S+)\s+((?P<duplex>\S+)\s+)?"
-                r"(?P<speed>\S+)\s+(?P<neg>\S+)\s+(?P<flow>\S+)\s+"
-                r"(?P<admin_state>(up|down))\s*((?P<back_pressure>\S+)\s+"
-                r"(?P<mdix_mode>\S+)\s*)?$",
-                re.IGNORECASE
-            )
-        )
+        show_int_conf = self.cli("show interfaces configuration", list_re=self.rx_list)
         for interface in show_int_conf:
             try:
                 iface = self.profile.convert_interface_name(interface["name"])

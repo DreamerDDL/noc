@@ -3,7 +3,7 @@
 # Vendor: D-Link
 # OS:     DxS
 # ---------------------------------------------------------------------
-# Copyright (C) 2007-2017 The NOC Project
+# Copyright (C) 2007-2018 The NOC Project
 # See LICENSE for details
 # ---------------------------------------------------------------------
 
@@ -37,10 +37,9 @@ class Profile(BaseProfile):
     rx_ver = re.compile(r"\d+")
 
     def cmp_version(self, x, y):
-        return cmp(
-            [int(z) for z in self.rx_ver.findall(x)],
-            [int(z) for z in self.rx_ver.findall(y)]
-        )
+        a = [int(z) for z in self.rx_ver.findall(x)]
+        b = [int(z) for z in self.rx_ver.findall(y)]
+        return (a > b) - (a < b)
 
     """
     IF-MIB:IfDescr
@@ -88,7 +87,7 @@ class Profile(BaseProfile):
         Ports in CLI like 1:1-24,2:1-24
         """
         platforms_with_stacked_ports = ('DGS-3120', 'DGS-3100', "DGS-3420")
-        match = self.rx_interface_name.match(s)
+        match = self.rx_interface_name.match(s.strip())
         if match:
             if match.group("re_slot") and match.group("re_slot") > "1" or \
                 match.group("re_platform") and \
@@ -275,7 +274,7 @@ class Profile(BaseProfile):
         r"VLAN Type\s+:\s+(?P<vlan_type>\S+)\s*?"
         r"((VLAN )?Advertisement\s+:\s+\S+\s*)?\n"
         r"Member Ports\s+:(?P<member_ports>.*?)\n"
-        r"(Static Ports\s+:.*?\n)?"
+        r"\s*(Static Ports\s+:.*?\n)?"
         r"((Current )?Tagged Ports\s+:.*?\n)?"
         r"(VLAN Trunk Ports\s+:.*?\n)?"
         r"(Current )?Untagged Ports\s*:(?P<untagged_ports>.*?)\n",
@@ -471,7 +470,8 @@ def DxS_L2(v):
         v["platform"].startswith("DGS-12") or
         v["platform"].startswith("DGS-15") or
         v["platform"].startswith("DGS-30") or
-        v["platform"].startswith("DGS-32")
+        v["platform"].startswith("DGS-32") or
+        v["platform"].startswith("DGS-37")
     ):
         return True
     else:
@@ -489,6 +489,13 @@ def get_platform(platform, hw_revision):
         platform.startswith("DGS-3420-") or
         platform.startswith("DGS-3620-")
     ):
+        if hw_revision is not None:
+            if platform.endswith("/%s" % hw_revision):
+                return platform
+        else:
+            # Found in DES-1210-28/ME/A1 with SNMP
+            if platform.startswith("DES-1210-"):
+                hw_revision = "A1"
         return "%s/%s" % (platform, hw_revision)
     else:
         return platform

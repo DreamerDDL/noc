@@ -26,9 +26,11 @@ from noc.inv.models.subinterface import SubInterface
 from noc.pm.models.metrictype import MetricType
 from noc.sla.models.slaprofile import SLAProfile
 from noc.sla.models.slaprobe import SLAProbe
-from noc.core.handler import get_handler
 from noc.fm.models.alarmclass import AlarmClass
 from noc.fm.models.alarmseverity import AlarmSeverity
+from noc.pm.models.thresholdprofile import ThresholdProfile
+from noc.core.window import get_window_function
+from noc.core.handler import get_handler
 
 
 MAX31 = 0x7FFFFFFF
@@ -59,6 +61,7 @@ MetricConfig = namedtuple("MetricConfig", [
     "window_related",
     "low_error", "low_warn", "high_warn", "high_error",
     "low_error_severity", "low_warn_severity", "high_warn_severity", "high_error_severity",
+    "threshold_profile",
     "process_thresholds"
 ])
 
@@ -164,6 +167,9 @@ class MetricsCheck(DiscoveryCheck):
             lww = AlarmSeverity.severity_for_weight(int(m.get("low_warn_weight", 1)))
             hew = AlarmSeverity.severity_for_weight(int(m.get("high_error_weight", 1)))
             hww = AlarmSeverity.severity_for_weight(int(m.get("high_warn_weight", 10)))
+            threshold_profile = None
+            if m.get("threshold_profile"):
+                threshold_profile = ThresholdProfile.get_by_id(m.get("threshold_profile"))
             r[mt.name] = MetricConfig(
                 mt,
                 m.get("enable_box", True),
@@ -179,6 +185,7 @@ class MetricsCheck(DiscoveryCheck):
                 int(hw) if hw is not None else None,
                 int(he) if he is not None else None,
                 lew, lww, hww, hew,
+                threshold_profile,
                 le is not None or lw is not None or he is not None or hw is not None
             )
         return r
@@ -210,6 +217,7 @@ class MetricsCheck(DiscoveryCheck):
             AlarmSeverity.severity_for_weight(m.low_warn_weight),
             AlarmSeverity.severity_for_weight(m.high_warn_weight),
             AlarmSeverity.severity_for_weight(m.high_error_weight),
+            m.threshold_profile,
             m.low_error is not None or m.low_warn is not None or m.high_warn is not None or m.high_error is not None
         )
 
@@ -444,6 +452,7 @@ class MetricsCheck(DiscoveryCheck):
             else:
                 # Gauge
                 m.abs_value = m.value * m.scale
+
             self.logger.debug(
                 "[%s] Measured value: %s. Scale: %s. Resulting value: %s",
                 m.label, m.value, m.scale, m.abs_value
@@ -477,7 +486,7 @@ class MetricsCheck(DiscoveryCheck):
                     )
                     continue
                 n_metrics += 1
-            if cfg.process_thresholds and m.abs_value:
+            if cfg.process_thresholds and m.abs_value is not None:
                 alarms += self.process_thresholds(m, cfg)
         return n_metrics, data, alarms
 
@@ -616,7 +625,7 @@ class MetricsCheck(DiscoveryCheck):
             )
             return None
         # Process window function
-        wf = getattr(self, "wf_%s" % cfg.window_function, None)
+        wf = get_window_function(cfg.window_function)
         if not wf:
             self.logger.error(
                 "Cannot calculate thresholds for %s (%s): Invalid window function %s",
@@ -647,8 +656,9 @@ class MetricsCheck(DiscoveryCheck):
         path = m.metric
         if m.path:
             path += " | ".join(m.path)
+        alarm_cfg = None
         if cfg.low_error is not None and w_value <= cfg.low_error:
-            alarms += [{
+            alarm_cfg = {
                 "alarm_class": self.AC_PM_LOW_ERROR,
                 "path": path,
                 "severity": cfg.low_error_severity,
@@ -661,9 +671,9 @@ class MetricsCheck(DiscoveryCheck):
                     "window": cfg.window,
                     "window_function": cfg.window_function
                 }
-            }]
+            }
         elif cfg.low_warn is not None and w_value <= cfg.low_warn:
-            alarms += [{
+            alarm_cfg = {
                 "alarm_class": self.AC_PM_LOW_WARN,
                 "path": path,
                 "severity": cfg.low_warn_severity,
@@ -676,9 +686,9 @@ class MetricsCheck(DiscoveryCheck):
                     "window": cfg.window,
                     "window_function": cfg.window_function
                 }
-            }]
+            }
         elif cfg.high_error is not None and w_value >= cfg.high_error:
-            alarms += [{
+            alarm_cfg = {
                 "alarm_class": self.AC_PM_HIGH_ERROR,
                 "path": path,
                 "severity": cfg.high_error_severity,
@@ -691,9 +701,9 @@ class MetricsCheck(DiscoveryCheck):
                     "window": cfg.window,
                     "window_function": cfg.window_function
                 }
-            }]
+            }
         elif cfg.high_warn is not None and w_value >= cfg.high_warn:
-            alarms += [{
+            alarm_cfg = {
                 "alarm_class": self.AC_PM_HIGH_WARN,
                 "path": path,
                 "severity": cfg.high_warn_severity,
@@ -706,7 +716,19 @@ class MetricsCheck(DiscoveryCheck):
                     "window": cfg.window,
                     "window_function": cfg.window_function
                 }
-            }]
+            }
+        if alarm_cfg is not None:
+            alarms += [alarm_cfg]
+            # Apply umbrella filter handler
+            if cfg.threshold_profile and cfg.threshold_profile.umbrella_filter_handler:
+                try:
+                    handler = get_handler(cfg.threshold_profile.umbrella_filter_handler)
+                    if handler:
+                        alarms = [handler(self, a) for a in alarms]
+                        # Remove filtered alarms
+                        alarms = [a for a in alarms if a]
+                except Exception as e:
+                    self.logger.error("Exception when loading handler %s", e)
         return alarms
 
     def send_metrics(self, data):
@@ -734,111 +756,3 @@ class MetricsCheck(DiscoveryCheck):
         # Spool data
         for f in chains:
             self.service.register_metrics(f, chains[f])
-
-    def wf_last(self, window, *args, **kwargs):
-        """
-        Returns last measured value
-        :param window:
-        :return:
-        """
-        return window[-1][1]
-
-    def wf_avg(self, window, *args, **kwargs):
-        """
-        Returns window average
-        :param window:
-        :return:
-        """
-        return float(sum(w[1] for w in window)) / len(window)
-
-    def _wf_percentile(self, window, q):
-        """
-        Calculate percentile
-        :param window:
-        :param q:
-        :return:
-        """
-        wl = sorted(w[1] for w in window)
-        i = len(wl) * q // 100
-        return wl[i]
-
-    def wf_percentile(self, window, config, *args, **kwargs):
-        """
-        Calculate percentile
-        :param window:
-        :param config:
-        :param args:
-        :param kwargs:
-        :return:
-        """
-        try:
-            q = int(config)
-        except ValueError:
-            raise ValueError("Percentile must be integer")
-        if q < 0 or q > 100:
-            raise ValueError("Percentile must be >0 and <100")
-        return self._wf_percentile(window, q)
-
-    def wf_q1(self, window, *args, **kwargs):
-        """
-        1st quartile
-        :param window:
-        :param args:
-        :param kwargs:
-        :return:
-        """
-        return self._wf_percentile(window, 25)
-
-    def wf_q2(self, window, *args, **kwargs):
-        """
-        1st quartile
-        :param window:
-        :param args:
-        :param kwargs:
-        :return:
-        """
-        return self._wf_percentile(window, 50)
-
-    def wf_q3(self, window, *args, **kwargs):
-        """
-        1st quartile
-        :param window:
-        :param args:
-        :param kwargs:
-        :return:
-        """
-        return self._wf_percentile(window, 75)
-
-    def wf_p95(self, window, *args, **kwargs):
-        """
-        1st quartile
-        :param window:
-        :param args:
-        :param kwargs:
-        :return:
-        """
-        return self._wf_percentile(window, 95)
-
-    def wf_p99(self, window, *args, **kwargs):
-        """
-        1st quartile
-        :param window:
-        :param args:
-        :param kwargs:
-        :return:
-        """
-        return self._wf_percentile(window, 99)
-
-    def wf_handler(self, window, config, *args, **kwargs):
-        """
-        Calculate via handler
-        :param window:
-        :param config:
-        :param args:
-        :param kwargs:
-        :return:
-        """
-        h = get_handler(config)
-        if not h:
-            raise ValueError("Invalid handler %s" % config)
-        return h(window)

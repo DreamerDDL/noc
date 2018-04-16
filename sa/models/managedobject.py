@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 # ManagedObject
 # ----------------------------------------------------------------------
-# Copyright (C) 2007-2017 The NOC Project
+# Copyright (C) 2007-2018 The NOC Project
 # See LICENSE for details
 # ----------------------------------------------------------------------
 
@@ -33,7 +33,6 @@ from .objectdata import ObjectData
 from .terminationgroup import TerminationGroup
 from noc.main.models.pool import Pool
 from noc.main.models.timepattern import TimePattern
-from noc.main.models import PyRule
 from noc.main.models.notificationgroup import NotificationGroup
 from noc.main.models.remotesystem import RemoteSystem
 from noc.inv.models.networksegment import NetworkSegment
@@ -45,7 +44,7 @@ from noc.fm.models.ttsystem import TTSystem, DEFAULT_TTSYSTEM_SHARD
 from noc.core.model.fields import INETField, TagsField, DocumentReferenceField, CachedForeignKey
 from noc.lib.db import SQL
 from noc.lib.app.site import site
-from noc.lib.stencil import stencil_registry
+from noc.core.stencil import stencil_registry
 from noc.lib.validators import is_ipv4, is_ipv4_prefix
 from noc.core.ip import IP
 from noc.sa.interfaces.base import MACAddressParameter
@@ -66,7 +65,7 @@ from noc.core.script.caller import SessionContext
 from noc.core.bi.decorator import bi_sync
 
 # Increase whenever new field added
-MANAGEDOBJECT_CACHE_VERSION = 7
+MANAGEDOBJECT_CACHE_VERSION = 8
 
 scheme_choices = [(1, "telnet"), (2, "ssh"), (3, "http"), (4, "https")]
 
@@ -98,7 +97,7 @@ class ManagedObject(Model):
     """
     Managed Object
     """
-    class Meta:
+    class Meta(object):
         verbose_name = "Managed Object"
         verbose_name_plural = "Managed Objects"
         db_table = "sa_managedobject"
@@ -278,28 +277,19 @@ class ManagedObject(Model):
         null=True, blank=True,
         on_delete=SET_NULL
     )
-    # pyRules
-    config_filter_rule = ForeignKey(
-        PyRule,
-        verbose_name="Config Filter pyRule",
-        limit_choices_to={"interface": "IConfigFilter"},
-        null=True, blank=True,
-        on_delete=SET_NULL,
-        related_name="managed_object_config_filter_rule_set")
-    config_diff_filter_rule = ForeignKey(
-        PyRule,
-        verbose_name="Config Diff Filter Rule",
-        limit_choices_to={"interface": "IConfigDiffFilter"},
-        null=True, blank=True,
-        on_delete=SET_NULL,
-        related_name="managed_object_config_diff_rule_set")
-    config_validation_rule = ForeignKey(
-        PyRule,
-        verbose_name="Config Validation pyRule",
-        limit_choices_to={"interface": "IConfigValidator"},
-        null=True, blank=True,
-        on_delete=SET_NULL,
-        related_name="managed_object_config_validation_rule_set")
+    # Config processing handlers
+    config_filter_handler = CharField(
+        "Config Filter handler",
+        max_length=256, null=True, blank=True
+    )
+    config_diff_filter_handler = CharField(
+        "Config Diff Filter Handler",
+        max_length=256, null=True, blank=True
+    )
+    config_validation_handler = CharField(
+        "Config Validation Handler",
+        max_length=256, null=True, blank=True
+    )
     max_scripts = IntegerField(
         "Max. Scripts",
         null=True, blank=True,
@@ -669,6 +659,10 @@ class ManagedObject(Model):
                 iseg.update_uplinks()
             self.segment.update_access()
             self.update_topology()
+            # Refresh links
+            from noc.inv.models.link import Link
+            for l in Link.object_links(self):
+                l.save()
         # Apply discovery jobs
         self.ensure_discovery_jobs()
         # Rebuild selector cache
@@ -927,26 +921,48 @@ class ManagedObject(Model):
         if isinstance(data, list):
             # Convert list to plain text
             r = []
-            for d in sorted(data, lambda x, y: cmp(x["name"], y["name"])):
+            for d in sorted(data, key=operator.attrgetter("name")):
                 r += ["==[ %s ]========================================\n%s" % (d["name"], d["config"])]
             data = "\n".join(r)
+        # Wipe out unnecessary parts
+        if self.config_filter_handler:
+            handler = get_handler(self.config_filter_handler)
+            if handler:
+                data = handler(self, data)
+            else:
+                self.logger.info(
+                    "[%s] Invalid config_filter_handler \"%s\", ignoring",
+                    self.config_filter_handler
+                )
         # Pass data through config filter, if given
-        if self.config_filter_rule:
-            data = self.config_filter_rule(
-                managed_object=self, config=data)
+        if self.config_diff_filter_handler:
+            handler = get_handler(self.config_diff_filter_handler)
+            if handler:
+                data = handler(self, data)
+            else:
+                self.logger.info(
+                    "[%s] Invalid config_diff_filter_handler \"%s\", ignoring",
+                    self.config_diff_filter_handler
+                )
         # Pass data through the validation filter, if given
-        # @todo: Remove
-        if self.config_validation_rule:
-            warnings = self.config_validation_rule(
-                managed_object=self, config=data)
-            if warnings:
-                # There are some warnings. Notify responsible persons
-                self.event(
-                    self.EV_CONFIG_POLICY_VIOLATION,
-                    {
-                        "object": self,
-                        "warnings": warnings
-                    }
+        # @todo: Replace with config validation policy
+        if self.config_validation_handler:
+            handler = get_handler(self.config_validation_handler)
+            if handler:
+                warnings = handler(self, data)
+                if warnings:
+                    # There are some warnings. Notify responsible persons
+                    self.event(
+                        self.EV_CONFIG_POLICY_VIOLATION,
+                        {
+                            "object": self,
+                            "warnings": warnings
+                        }
+                    )
+            else:
+                self.logger.info(
+                    "[%s] Invalid config_validation_handler \"%s\", ignoring",
+                    self.config_validation_handler
                 )
         # Calculate diff
         old_data = self.config.read()
@@ -954,14 +970,14 @@ class ManagedObject(Model):
         diff = None
         if not is_new:
             # Calculate diff
-            if self.config_diff_filter_rule:
-                # Pass through filters
-                old_data = self.config_diff_filter_rule(
-                    managed_object=self, config=old_data)
-                new_data = self.config_diff_filter_rule(
-                    managed_object=self, config=data)
-                if not old_data and not new_data:
-                    logger.error("[%s] broken config_diff_filter: Returns empty result", self.name)
+            if self.config_diff_filter_handler:
+                handler = get_handler(self.config_diff_filter_handler)
+                if handler:
+                    # Pass through filters
+                    old_data = handler(self, old_data)
+                    new_data = handler(self, data)
+                    if not old_data and not new_data:
+                        logger.error("[%s] broken config_diff_filter: Returns empty result", self.name)
             else:
                 new_data = data
             if old_data == new_data:
@@ -1214,6 +1230,14 @@ class ManagedObject(Model):
         """
         if not self.tt_system or not self.tt_system_id:
             return False
+        return self.can_notify(depended)
+
+    def can_notify(self, depended=False):
+        """
+        Check alarm can be notified via escalation
+        :param depended:
+        :return:
+        """
         if self.escalation_policy == "E":
             return True
         elif self.escalation_policy == "P":
@@ -1352,20 +1376,26 @@ class ManagedObject(Model):
             qs["segment__in"] = [cfg["segment"]]
         if "container" in cfg:
             qs["container__in"] = [cfg["container"]]
+        if "vendor" in cfg:
+            qs["vendor__in"] = [cfg["vendor"]]
         if "platform" in cfg:
             qs["platform__in"] = [cfg["platform"]]
         if "version" in cfg:
             qs["version__in"] = [cfg["version"]]
         return [
-            r.bi_id
-            for r in ManagedObject.objects.filter(**qs).only("id", "bi_id")
+            int(r)
+            for r in ManagedObject.objects.filter(**qs).values_list("bi_id", flat=True)
         ]
+
+    @property
+    def metrics(self):
+        metric, last = get_objects_metrics([self])
+        return metric.get(self), last.get(self)
 
 
 @on_save
 class ManagedObjectAttribute(Model):
-
-    class Meta:
+    class Meta(object):
         verbose_name = "Managed Object Attribute"
         verbose_name_plural = "Managed Object Attributes"
         db_table = "sa_managedobjectattribute"
@@ -1468,3 +1498,4 @@ from .objectnotification import ObjectNotification
 from .action import Action
 from .selectorcache import SelectorCache
 from .objectcapabilities import ObjectCapabilities
+from noc.core.pm.utils import get_objects_metrics

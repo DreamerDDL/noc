@@ -17,9 +17,9 @@ class Script(BaseScript):
     interface = IGetInterfaceStatusEx
     requires = []
 
-    def execute(self):
+    def execute_snmp(self):
         result = []
-        for v in self.snmp.getnext("1.3.6.1.3.55.1.3.1.1", cached=True):
+        for v in self.snmp.getnext("1.3.6.1.3.55.1.3.1.1", max_repetitions=3, cached=True):
             name = v[1]
             status = self.snmp.get("1.3.6.1.3.55.1.3.1.4.%s" % name)
             if status == 0:

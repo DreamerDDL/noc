@@ -2,7 +2,7 @@
 # ---------------------------------------------------------------------
 # SLA Profile models
 # ---------------------------------------------------------------------
-# Copyright (C) 2007-2017 The NOC Project
+# Copyright (C) 2007-2018 The NOC Project
 # See LICENSE for details
 # ---------------------------------------------------------------------
 
@@ -18,7 +18,9 @@ import cachetools
 # NOC modules
 from noc.main.models.style import Style
 from noc.pm.models.metrictype import MetricType
+from noc.pm.models.thresholdprofile import ThresholdProfile
 from noc.lib.nosql import ForeignKeyField
+from noc.core.window import wf_choices
 
 id_lock = Lock()
 
@@ -48,30 +50,7 @@ class SLAProfileMetrics(EmbeddedDocument):
     # Accepts window as a list of [(timestamp, value)]
     # and window_config
     # and returns float value
-    window_function = StringField(
-        choices=[
-            # Call handler
-            # window_config is a handler
-            ("handler", "Handler"),
-            # Last measure
-            ("last", "Last Value"),
-            # Average, no config
-            ("avg", "Average"),
-            # Percentile, window_config is in a percent
-            ("percentile", "Percentile"),
-            # 25% percentile
-            ("q1", "1st Quartile"),
-            # 50% percentile, median
-            ("q2", "2st Quartile"),
-            # 75% percentile
-            ("q3", "3st Quartile"),
-            # 95% percentile
-            ("p95", "95% percentile"),
-            # 99% percentile
-            ("p99", "99% percentile")
-        ],
-        default="last"
-    )
+    window_function = StringField(choices=wf_choices, default="last")
     # Window function configuration
     window_config = StringField()
     # Convert window function result to percents of interface bandwidth
@@ -90,6 +69,8 @@ class SLAProfileMetrics(EmbeddedDocument):
     low_warn_weight = IntField(default=1)
     high_warn_weight = IntField(default=1)
     high_error_weight = IntField(default=10)
+    # Threshold processing
+    threshold_profile = ReferenceField(ThresholdProfile)
 
 
 class SLAProfile(Document):

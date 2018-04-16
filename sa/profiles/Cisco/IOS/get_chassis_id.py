@@ -29,7 +29,7 @@ class Script(BaseScript):
     # Single chassis mac
     #
     rx_small_cat = re.compile(
-        r"^Base ethernet MAC Address\s*:\s*(?P<id>\S+)",
+        r"^Base [Ee]thernet MAC Address\s*:\s*(?P<id>\S+)",
         re.MULTILINE
     )
 
@@ -122,7 +122,7 @@ class Script(BaseScript):
     #
     # Cisco ISR series
     #
-    @BaseScript.match(platform__regex=r"^C(1900|2900|2951|3900)")
+    @BaseScript.match(platform__regex=r"^(19\d\d|29\d\d|39\d\d)$")
     def execute_c3900(self):
         v = self.cli("show diag")
         macs = []

@@ -282,7 +282,6 @@ class ConsulDCS(DCSBase):
                 yield self.destroy_session()
             except ConsulRepeatableErrors:
                 metrics["error", ("type", "cant_destroy_consul_session_soft")] += 1
-                pass
             except Exception as e:
                 metrics["error", ("type", "cant_destroy_consul_session")] += 1
                 self.logger.error("Cannot destroy session: %s", e)
@@ -291,7 +290,6 @@ class ConsulDCS(DCSBase):
                 yield self.consul.agent.service.deregister(self.svc_id)
             except ConsulRepeatableErrors:
                 metrics["error", ("type", "cant_deregister_consul_soft")] += 1
-                pass
             except Exception as e:
                 metrics["error", ("type", "cant_deregister_consul")] += 1
                 self.logger.error("Cannot deregister service: %s", e)
@@ -435,10 +433,10 @@ class ConsulDCS(DCSBase):
                     else:
                         dead_contenders.add(e["Key"])
             if manifest:
-                total_slots = manifest["Limit"]
+                total_slots = int(manifest.get("Limit", 0))
                 holders = [
                     h if h in seen_sessions else self.EMPTY_HOLDER
-                    for h in manifest["Holders"]
+                    for h in manifest.get("Holders", [])
                 ]
             else:
                 self.logger.info("Initializing manifest")
@@ -498,11 +496,12 @@ class ConsulDCS(DCSBase):
         index = 0
         while True:
             try:
-                index, services = yield self.consul.catalog.service(
+                index, services = yield self.consul.health.service(
                     service=name,
                     index=index,
                     near="_agent",
-                    token=self.consul_token
+                    token=self.consul_token,
+                    passing=True
                 )
             except ConsulRepeatableErrors as e:
                 metrics["error", ("type", "dcs_consul_failed_resolve_near")] += 1
@@ -522,8 +521,8 @@ class ConsulDCS(DCSBase):
                 continue
             r = []
             for svc in services:
-                r += ["%s:%s" % (str(svc["ServiceAddress"] or svc["Address"]),
-                                 str(svc["ServicePort"]))]
+                r += ["%s:%s" % (str(svc["Service"]["Address"] or svc["Node"]["Address"]),
+                                 str(svc["Service"]["Port"]))]
                 if not full_result:
                     break
             self.logger.info("Resolved near service %s to %s", name, r)

@@ -2,7 +2,7 @@
 # ---------------------------------------------------------------------
 # Juniper.JUNOS.get_interfaces
 # ---------------------------------------------------------------------
-# Copyright (C) 2007-2017 The NOC Project
+# Copyright (C) 2007-2018 The NOC Project
 # See LICENSE for details
 # ---------------------------------------------------------------------
 
@@ -84,18 +84,20 @@ class Script(BaseScript):
             L = self.rx_log_split.split(v)
             phy = L.pop(0)
             phy = phy.replace(" )", "")
-            match = self.re_search(self.rx_phy_name, phy)
+            match = self.rx_phy_name.search(phy)
             name = match.group("ifname")
             if name.endswith(")"):
                 name = name[:-1]
             # Detect interface type
             if name.startswith("lo"):
                 iftype = "loopback"
-            elif name.startswith("fxp"):
+            elif name.startswith("fxp") or name.startswith("me"):
                 iftype = "management"
             elif name.startswith("ae") or name.startswith("reth"):
                 iftype = "aggregated"
             elif name.startswith("vlan"):
+                iftype = "SVI"
+            elif name.startswith("vme"):
                 iftype = "SVI"
             elif name.startswith("irb"):
                 iftype = "SVI"
@@ -134,7 +136,7 @@ class Script(BaseScript):
             # Process subinterfaeces
             subs = []
             for s in L:
-                match = self.re_search(self.rx_log_name, s)
+                match = self.rx_log_name.search(s)
                 sname = match.group("name")
                 if not self.profile.valid_interface_name(self, sname):
                     continue
@@ -164,7 +166,7 @@ class Script(BaseScript):
                         vlan_ids += [int(match.group("vlan2"))]
                 # Process protocols
                 for p in self.rx_log_protocol.split(s)[1:]:
-                    match = self.re_search(self.rx_log_pname, p)
+                    match = self.rx_log_pname.search(p)
                     proto = match.group("proto")
                     local_addresses = self.rx_log_address.findall(p)
                     if proto == "iso":
@@ -197,7 +199,7 @@ class Script(BaseScript):
                             si["ipv6_addresses"] += ["%s/%s" % (addr, m)]
                     elif proto == "aenet":
                         # Aggregated
-                        match = self.re_search(self.rx_log_ae, p)
+                        match = self.rx_log_ae.search(p)
                         bundle = match.group("bundle")
                         iface["aggregated_interface"] = bundle
                     elif (

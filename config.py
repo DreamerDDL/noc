@@ -214,6 +214,7 @@ class Config(BaseConfig):
         consul_healthchecks = BooleanParameter(default=True, help="While registering serive in consul also register health check")
         service_registration = BooleanParameter(default=True, help="Permit consul self registration")
         pypy = BooleanParameter(default=False)
+        forensic = BooleanParameter(default=False)
 
     class fm(ConfigSection):
         active_window = SecondsParameter(default="1d")
@@ -369,7 +370,6 @@ class Config(BaseConfig):
         babel = StringParameter(default="./bin/pybabel")
         pojson = StringParameter(default="./bin/pojson")
         collection_fm_mibs = StringParameter(default="collections/fm.mibs/")
-        shapes_path = StringParameter(default="static/shape/")
         supervisor_cfg = StringParameter(default="etc/noc_services.conf")
         legacy_config = StringParameter(default="etc/noc.yml")
         cythonize = StringParameter(default="./bin/cythonize")
