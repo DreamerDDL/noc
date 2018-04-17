@@ -87,7 +87,32 @@ class Script(BaseScript):
                     break
         r = {
             "vendor": "DLink",
-            "platform": match.group("platform"),
+            "platform": platform,
+            "version": version,
+            "attributes": {}
+        }
+        if bootprom:
+            r["attributes"]["Boot PROM"] = bootprom
+        if hardware:
+            r["attributes"]["HW version"] = hardware
+        if serial:
+            r["attributes"]["Serial Number"] = serial
+        if fwt and fwt != version:
+            r["attributes"]["Firmware Type"] = fwt
+        return r
+
+    def execute_cli(self):
+        s = self.scripts.get_switch()
+        match = self.rx_ver.search(s)
+        if match.group("platform"):
+            platform = match.group("platform")
+        else:
+            match = self.rx_ver_old.search(s)
+            m = self.motd
+            platform = self.rx_motd.search(m).group("platform")
+        r = {
+            "vendor": "DLink",
+            "platform": platform,
             "version": match.group("version"),
             "attributes": {
                 "Boot PROM": match.group("bootprom"),
@@ -101,3 +126,4 @@ class Script(BaseScript):
         if fwt and fwt.group("fwt") != match.group("version"):
             r["attributes"]["Firmware Type"] = fwt.group("fwt")
         return r
+      
